@@ -5,6 +5,32 @@ const db = require("../database/database");
 
 const router = express.Router();
 
+router.post("/login", async (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required." });
+    }
+
+    try {
+        const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({ message: "Invalid username or password." });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role },
+            process.env.JWT_SECRET || "change-this-development-secret",
+            { expiresIn: "8h" }
+        );
+
+        res.json({ token, user: { id: user.id, fullname: user.fullname, username: user.username, role: user.role } });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error." });
+    }
+});
+
 /*
     REGISTER
 */
@@ -34,6 +60,13 @@ router.post("/register", async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // This is a single-doctor clinic system: only one account may be created.
+        const userCount = db.prepare("SELECT COUNT(*) AS total FROM users").get().total;
+        if (userCount > 0) {
+            return res.status(403).json({ message: "This clinic system already has its doctor account." });
+        }
+        const accountRole = "doctor";
+
         // Insert user
         const result = db.prepare(`
             INSERT INTO users
@@ -43,7 +76,7 @@ router.post("/register", async (req, res) => {
             fullname,
             username,
             hashedPassword,
-            role || "staff"
+            accountRole
         );
 
         res.status(201).json({

@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 
 import {
@@ -45,6 +45,7 @@ export default function Login() {
         "token",
         response.data.token
       );
+      localStorage.setItem("user", JSON.stringify(response.data.user));
 
 
       navigate("/dashboard");
@@ -334,6 +335,10 @@ export default function Login() {
 
 
           <div className="mt-8 text-center">
+
+            <p className="mb-4 text-sm text-gray-600">
+              New to the clinic system? <Link to="/register" className="font-semibold text-pink-600 hover:text-pink-700">Create an account</Link>
+            </p>
 
             <div className="flex justify-center items-center gap-2 text-pink-500">
 

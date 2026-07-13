@@ -1,0 +1,25 @@
+{
+  "name": "ob-gyn-server",
+  "version": "1.0.0",
+  "description": "OB-GYN System Backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "lucide-react": "^1.24.0",
+    "tailwindcss": "^4.3.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "bcrypt@6.0.0": true
+  }
+}

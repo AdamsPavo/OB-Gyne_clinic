@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import Login from "./pages/Login";
+import Login from "./Pages/Login";
 import Register from "./Pages/Register";
-import Dashboard from "./pages/Dashboard";
+import Dashboard from "./Pages/Dashboard";
 import Patient from "./Pages/Patient";
+import PatientProfile from "./Pages/PatientProfile";
+import CaseDetail from "./Pages/CaseDetail";
 import Appointments from "./Pages/Appointments";
 import Consultations from "./Pages/Consultations";
 import PrenatalRecords from "./Pages/PrenatalRecords";
@@ -11,6 +13,8 @@ import Prescriptions from "./Pages/Prescriptions";
 import Billing from "./Pages/Billing";
 import Reports from "./Pages/Reports";
 import BackupRestore from "./Pages/BackupRestore";
+import ClinicModule from "./Pages/ClinicModule";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 
 
 function App(){
@@ -19,7 +23,7 @@ function App(){
 
     <BrowserRouter>
 
-      <Routes>
+      <AppErrorBoundary><Routes>
 
         <Route 
           path="/" 
@@ -38,6 +42,8 @@ function App(){
           path="/patients"
           element={<Patient/>}
         />
+        <Route path="/patients/:id" element={<PatientProfile />} />
+        <Route path="/cases/:id" element={<CaseDetail />} />
 
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/consultations" element={<Consultations />} />
@@ -46,9 +52,11 @@ function App(){
         <Route path="/billing" element={<Billing />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/backup-restore" element={<BackupRestore />} />
+        <Route path="/laboratory-requests" element={<ClinicModule moduleName="Laboratory Requests" />} />
+        <Route path="/settings" element={<ClinicModule moduleName="Settings" />} />
 
 
-      </Routes>
+      </Routes></AppErrorBoundary>
 
     </BrowserRouter>
 

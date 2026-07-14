@@ -1,7 +1,8 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { api } from "../api/client";
 
 import {
   User, Lock, Eye, EyeOff,
@@ -20,6 +21,9 @@ export default function Login() {
   const [password,setPassword] = useState("");
   const [showPassword,setShowPassword] = useState(false);
   const [loading,setLoading] = useState(false);
+  const [configured, setConfigured] = useState(true);
+
+  useEffect(() => { api("/auth/setup-status").then((data) => setConfigured(data.configured)).catch(() => {}); }, []);
 
 
   const handleLogin = async(e)=>{
@@ -42,7 +46,7 @@ export default function Login() {
 
       // save token
       localStorage.setItem(
-        "token",
+        "obgyn_token",
         response.data.token
       );
       localStorage.setItem("user", JSON.stringify(response.data.user));
@@ -337,7 +341,7 @@ export default function Login() {
           <div className="mt-8 text-center">
 
             <p className="mb-4 text-sm text-gray-600">
-              New to the clinic system? <Link to="/register" className="font-semibold text-pink-600 hover:text-pink-700">Create an account</Link>
+              {!configured && <>First time here? <Link to="/register" className="font-semibold text-pink-600 hover:text-pink-700">Set up the clinic</Link></>}
             </p>
 
             <div className="flex justify-center items-center gap-2 text-pink-500">

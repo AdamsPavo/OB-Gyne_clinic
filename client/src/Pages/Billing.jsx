@@ -1,5 +1,10 @@
-import ClinicModule from "./ClinicModule";
+import { useEffect, useState } from "react";
+import { CreditCard } from "lucide-react";
+import Sidebar from "../components/Sidebar";
+import { api } from "../api/client";
 
 export default function Billing() {
-  return <ClinicModule moduleName="Billing" />;
+  const [rows, setRows] = useState([]), [error, setError] = useState("");
+  useEffect(() => { api("/billings").then(setRows).catch((e) => setError(e.message)); }, []);
+  return <div className="flex min-h-screen bg-slate-50"><Sidebar activeItem="Billing" /><div className="min-w-0 flex-1"><header className="m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6"><h1 className="text-3xl font-bold">Billing</h1><p className="mt-2 text-pink-100">One billing record is created with each consultation case.</p></header><main className="px-4 pb-8 sm:px-6"><section className="rounded-3xl bg-white p-6 shadow-sm"><div className="flex items-center gap-3"><CreditCard className="text-pink-600" /><div><h2 className="text-xl font-bold">Case billing</h2><p className="text-sm text-slate-500">{rows.length} billing record{rows.length === 1 ? "" : "s"}</p></div></div>{error && <p className="mt-4 text-sm text-red-600">{error}</p>}<div className="mt-6 overflow-x-auto"><table className="w-full min-w-[700px] text-left"><thead><tr className="border-b text-xs uppercase text-slate-400"><th className="p-3">Invoice</th><th className="p-3">Case</th><th className="p-3">Patient</th><th className="p-3">Date</th><th className="p-3">Total</th><th className="p-3">Status</th></tr></thead><tbody>{rows.length ? rows.map((item) => <tr key={item.id} className="border-b"><td className="p-3 font-semibold text-pink-600">{item.invoice_number}</td><td className="p-3">{item.case_number || "Legacy record"}</td><td className="p-3">{item.patient_name}</td><td className="p-3">{item.invoice_date?.slice(0, 10)}</td><td className="p-3">₱{Number(item.total_amount || 0).toFixed(2)}</td><td className="p-3">{item.payment_status}</td></tr>) : <tr><td colSpan="6" className="p-8 text-center text-sm text-slate-500">No billing records found.</td></tr>}</tbody></table></div></section></main></div></div>;
 }

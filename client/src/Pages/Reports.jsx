@@ -1,5 +1,5 @@
-import ClinicModule from "./ClinicModule";
-
-export default function Reports() {
-  return <ClinicModule moduleName="Reports" />;
-}
+import { useEffect, useState } from "react";
+import { BarChart3 } from "lucide-react";
+import Sidebar from "../components/Sidebar";
+import { api } from "../api/client";
+export default function Reports() { const [data, setData] = useState({ cases: [], income: [], diagnoses: [] }); const [error, setError] = useState(""); useEffect(() => { api("/reports/summary").then(setData).catch((e) => setError(e.message)); }, []); const section = (title, rows, headers) => <section className="rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-lg font-bold">{title}</h2><div className="mt-4 overflow-x-auto"><table className="w-full text-left"><thead><tr className="border-b text-xs uppercase text-slate-400">{headers.map(h=><th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{rows.length ? rows.map((r,i)=><tr key={i} className="border-b">{Object.values(r).map((v,j)=><td key={j} className="p-3">{v}</td>)}</tr>) : <tr><td colSpan={headers.length} className="p-6 text-center text-sm text-slate-500">No data recorded yet.</td></tr>}</tbody></table></div></section>; return <div className="flex min-h-screen bg-slate-50"><Sidebar activeItem="Reports"/><div className="flex-1"><header className="m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white sm:m-6"><div className="flex items-center gap-3"><BarChart3/><div><h1 className="text-3xl font-bold">Reports</h1><p className="text-teal-100">Live summaries calculated from clinic records.</p></div></div></header><main className="grid gap-6 px-4 pb-8 lg:grid-cols-3 sm:px-6">{error&&<p className="text-red-600">{error}</p>}{section("Consultations by day",data.cases,["Date","Consultations"])}{section("Income by month",data.income,["Month","Income"])}{section("Most common diagnoses",data.diagnoses,["Diagnosis","Cases"])}</main></div></div>; }

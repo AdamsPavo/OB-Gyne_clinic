@@ -5,6 +5,33 @@ const db = require("../database/database");
 
 const router = express.Router();
 
+router.get("/setup-status", (req, res) => {
+    const configured = db.prepare("SELECT COUNT(*) AS total FROM users").get().total > 0;
+    const settings = db.prepare("SELECT clinic_name, clinic_address, doctor_name FROM settings WHERE id = 1").get();
+    res.json({ configured, settings: settings || null });
+});
+
+router.post("/setup", async (req, res) => {
+    const { clinicName, clinicAddress, doctorName, username, password } = req.body;
+    if (!clinicName || !clinicAddress || !doctorName || !username || !password) {
+        return res.status(400).json({ message: "Clinic and administrator details are required." });
+    }
+    if (db.prepare("SELECT COUNT(*) AS total FROM users").get().total > 0) {
+        return res.status(403).json({ message: "This clinic has already been configured." });
+    }
+    try {
+        const passwordHash = await bcrypt.hash(password, 12);
+        db.prepare("INSERT INTO settings (id, clinic_name, clinic_address, doctor_name) VALUES (1, ?, ?, ?)")
+          .run(clinicName.trim(), clinicAddress.trim(), doctorName.trim());
+        const result = db.prepare("INSERT INTO users (fullname, username, password, role) VALUES (?, ?, ?, 'doctor')")
+          .run(doctorName.trim(), username.trim(), passwordHash);
+        res.status(201).json({ message: "Clinic configured.", userId: result.lastInsertRowid });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Unable to configure clinic." });
+    }
+});
+
 router.post("/login", async (req, res) => {
     const { username, password } = req.body;
 

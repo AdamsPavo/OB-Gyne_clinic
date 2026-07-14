@@ -1,6 +1,17 @@
 import { Link } from "react-router-dom";
 import Logo from "../assets/OBLOGO.png";
-import { menuItems } from "./menuItems.jsx";
+
+const menuItems = [
+  { name: "Dashboard", icon: "⌂", path: "/dashboard" },
+  { name: "Patients", icon: "♁", path: "/patients" },
+  { name: "Appointments", icon: "◷" },
+  { name: "Consultations", icon: "+" },
+  { name: "Prenatal Records", icon: "♥" },
+  { name: "Prescriptions", icon: "◉" },
+  { name: "Billing", icon: "□" },
+  { name: "Reports", icon: "▥" },
+  { name: "Backup / Restore", icon: "↻" },
+];
 
 function Sidebar({ activeItem = "Dashboard" }) {
   return <aside className="hidden h-screen w-72 shrink-0 flex-col border-r border-pink-100 bg-white shadow-xl lg:flex">

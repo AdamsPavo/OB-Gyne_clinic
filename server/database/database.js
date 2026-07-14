@@ -13,6 +13,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    clinic_name TEXT NOT NULL,
+    clinic_address TEXT NOT NULL,
+    doctor_name TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS patients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_number TEXT UNIQUE NOT NULL,
@@ -28,6 +37,42 @@ db.exec(`
     emergency_contact_number TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS consultation_cases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_number TEXT UNIQUE NOT NULL,
+    patient_id INTEGER NOT NULL,
+    doctor_id INTEGER,
+    consultation_date TEXT NOT NULL,
+    chief_complaint TEXT,
+    history_present_illness TEXT,
+    blood_pressure TEXT,
+    temperature_c REAL,
+    weight_kg REAL,
+    height_cm REAL,
+    treatment TEXT,
+    doctor_notes TEXT,
+    follow_up_date TEXT,
+    case_status TEXT NOT NULL DEFAULT 'Open' CHECK (case_status IN ('Open','Completed','Cancelled')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id),
+    FOREIGN KEY (doctor_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS diagnoses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE,
+    diagnosis_name TEXT NOT NULL UNIQUE
+  );
+
+  CREATE TABLE IF NOT EXISTS case_diagnoses (
+    consultation_case_id INTEGER NOT NULL,
+    diagnosis_id INTEGER NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (consultation_case_id, diagnosis_id),
+    FOREIGN KEY (consultation_case_id) REFERENCES consultation_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (diagnosis_id) REFERENCES diagnoses(id)
   );
 
   CREATE TABLE IF NOT EXISTS appointments (
@@ -175,6 +220,30 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_prescriptions_patient ON prescriptions(patient_id);
   CREATE INDEX IF NOT EXISTS idx_lab_requests_patient ON laboratory_requests(patient_id);
   CREATE INDEX IF NOT EXISTS idx_invoices_patient ON invoices(patient_id);
+  CREATE INDEX IF NOT EXISTS idx_cases_patient ON consultation_cases(patient_id, consultation_date);
 `);
+
+// Safe additive migrations for databases created by older versions.
+for (const column of [
+  'civil_status TEXT', 'occupation TEXT', 'allergies TEXT', 'existing_illnesses TEXT',
+  'previous_surgeries TEXT', 'family_history TEXT', 'ob_history TEXT', 'pregnancy_history TEXT',
+  'notes TEXT', 'is_archived INTEGER NOT NULL DEFAULT 0'
+]) {
+  try { db.exec(`ALTER TABLE patients ADD COLUMN ${column}`); } catch (_) { /* already present */ }
+}
+
+// Case links were introduced after the original document tables. Keep the
+// legacy consultation_id columns for existing installations, while making the
+// consultation case the canonical relationship for all new records.
+for (const statement of [
+  "ALTER TABLE prescriptions ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
+  "ALTER TABLE laboratory_requests ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
+  "ALTER TABLE invoices ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
+  "CREATE INDEX IF NOT EXISTS idx_prescriptions_case ON prescriptions(consultation_case_id)",
+  "CREATE INDEX IF NOT EXISTS idx_lab_requests_case ON laboratory_requests(consultation_case_id)",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_case ON invoices(consultation_case_id)"
+]) {
+  try { db.exec(statement); } catch (_) { /* column or index already exists */ }
+}
 
 module.exports = db;

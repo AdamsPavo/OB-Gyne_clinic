@@ -16,53 +16,84 @@ import BackupRestore from "./Pages/BackupRestore";
 import ClinicModule from "./Pages/ClinicModule";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 
-
-function App(){
-
+function App() {
   return (
-
     <BrowserRouter>
+      <AppErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Login />} />
 
-      <AppErrorBoundary><Routes>
+          <Route path="/register" element={<Register />} />
 
-        <Route 
-          path="/" 
-          element={<Login/>}
-        />
+          <Route path="/dashboard" element={<Dashboard />} />
 
-        <Route path="/register" element={<Register />} />
+          <Route path="/patients" element={<Patient />} />
 
+          <Route
+            path="/patients/:id"
+            element={<PatientProfile />}
+          />
 
-        <Route
-          path="/dashboard"
-          element={<Dashboard/>}
-        />
+          <Route
+            path="/cases/:id"
+            element={<CaseDetail />}
+          />
 
-        <Route
-          path="/patients"
-          element={<Patient/>}
-        />
-        <Route path="/patients/:id" element={<PatientProfile />} />
-        <Route path="/cases/:id" element={<CaseDetail />} />
+          <Route
+            path="/appointments"
+            element={<Appointments />}
+          />
 
-        <Route path="/appointments" element={<Appointments />} />
-        <Route path="/consultations" element={<Consultations />} />
-        <Route path="/prenatal-records" element={<PrenatalRecords />} />
-        <Route path="/prescriptions" element={<Prescriptions />} />
-        <Route path="/billing" element={<Billing />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/backup-restore" element={<BackupRestore />} />
-        <Route path="/laboratory-requests" element={<ClinicModule moduleName="Laboratory Requests" />} />
-        <Route path="/settings" element={<ClinicModule moduleName="Settings" />} />
+          <Route
+            path="/consultations"
+            element={<Consultations />}
+          />
 
+          <Route
+            path="/consultations/new"
+            element={<Consultations />}
+          />
 
-      </Routes></AppErrorBoundary>
+          <Route
+            path="/prenatal-records"
+            element={<PrenatalRecords />}
+          />
 
+          <Route
+            path="/prescriptions"
+            element={<Prescriptions />}
+          />
+
+          <Route
+            path="/billing"
+            element={<Billing />}
+          />
+
+          <Route
+            path="/reports"
+            element={<Reports />}
+          />
+
+          <Route
+            path="/backup-restore"
+            element={<BackupRestore />}
+          />
+
+          <Route
+            path="/laboratory-requests"
+            element={
+              <ClinicModule moduleName="Laboratory Requests" />
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={<ClinicModule moduleName="Settings" />}
+          />
+        </Routes>
+      </AppErrorBoundary>
     </BrowserRouter>
-
   );
-
 }
-
 
 export default App;

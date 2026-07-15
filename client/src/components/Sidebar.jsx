@@ -4,13 +4,13 @@ import Logo from "../assets/OBLOGO.png";
 const menuItems = [
   { name: "Dashboard", icon: "⌂", path: "/dashboard" },
   { name: "Patients", icon: "♁", path: "/patients" },
-  { name: "Appointments", icon: "◷" },
-  { name: "Consultations", icon: "+" },
-  { name: "Prenatal Records", icon: "♥" },
-  { name: "Prescriptions", icon: "◉" },
-  { name: "Billing", icon: "□" },
-  { name: "Reports", icon: "▥" },
-  { name: "Backup / Restore", icon: "↻" },
+  { name: "Appointments", icon: "◷", path: "/appointments" },
+  { name: "Consultations", icon: "+", path: "/consultations" },
+  { name: "Prenatal Records", icon: "♥", path: "/prenatal-records" },
+  { name: "Prescriptions", icon: "◉", path: "/prescriptions" },
+  { name: "Billing", icon: "□", path: "/billing" },
+  { name: "Reports", icon: "▥", path: "/reports" },
+  { name: "Backup / Restore", icon: "↻", path: "/backups" },
 ];
 
 function Sidebar({ activeItem = "Dashboard" }) {

@@ -40,25 +40,36 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS consultation_cases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    case_number TEXT UNIQUE NOT NULL,
-    patient_id INTEGER NOT NULL,
-    doctor_id INTEGER,
-    consultation_date TEXT NOT NULL,
-    chief_complaint TEXT,
-    history_present_illness TEXT,
-    blood_pressure TEXT,
-    temperature_c REAL,
-    weight_kg REAL,
-    height_cm REAL,
-    treatment TEXT,
-    doctor_notes TEXT,
-    follow_up_date TEXT,
-    case_status TEXT NOT NULL DEFAULT 'Open' CHECK (case_status IN ('Open','Completed','Cancelled')),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (patient_id) REFERENCES patients(id),
-    FOREIGN KEY (doctor_id) REFERENCES users(id)
-  );
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  case_number TEXT UNIQUE NOT NULL,
+  patient_id INTEGER NOT NULL,
+  doctor_id INTEGER,
+  appointment_id INTEGER,
+  service_type TEXT,
+  consultation_date TEXT NOT NULL,
+  chief_complaint TEXT,
+  history_present_illness TEXT,
+  blood_pressure TEXT,
+  temperature_c REAL,
+  weight_kg REAL,
+  height_cm REAL,
+  treatment TEXT,
+  doctor_notes TEXT,
+  follow_up_date TEXT,
+  case_status TEXT NOT NULL DEFAULT 'Open'
+    CHECK (case_status IN ('Open','Completed','Cancelled')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (patient_id)
+    REFERENCES patients(id),
+
+  FOREIGN KEY (doctor_id)
+    REFERENCES users(id),
+
+  FOREIGN KEY (appointment_id)
+    REFERENCES appointments(id)
+    ON DELETE SET NULL
+);
 
   CREATE TABLE IF NOT EXISTS diagnoses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -225,25 +236,51 @@ db.exec(`
 
 // Safe additive migrations for databases created by older versions.
 for (const column of [
-  'civil_status TEXT', 'occupation TEXT', 'allergies TEXT', 'existing_illnesses TEXT',
-  'previous_surgeries TEXT', 'family_history TEXT', 'ob_history TEXT', 'pregnancy_history TEXT',
-  'notes TEXT', 'is_archived INTEGER NOT NULL DEFAULT 0'
+  "civil_status TEXT",
+  "occupation TEXT",
+  "allergies TEXT",
+  "existing_illnesses TEXT",
+  "previous_surgeries TEXT",
+  "family_history TEXT",
+  "ob_history TEXT",
+  "pregnancy_history TEXT",
+  "notes TEXT",
+  "is_archived INTEGER NOT NULL DEFAULT 0",
 ]) {
-  try { db.exec(`ALTER TABLE patients ADD COLUMN ${column}`); } catch (_) { /* already present */ }
+  try {
+    db.exec(`ALTER TABLE patients ADD COLUMN ${column}`);
+  } catch (_) {
+    // Already present.
+  }
 }
 
-// Case links were introduced after the original document tables. Keep the
-// legacy consultation_id columns for existing installations, while making the
-// consultation case the canonical relationship for all new records.
+// Case links were introduced after the original document tables.
 for (const statement of [
   "ALTER TABLE prescriptions ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
   "ALTER TABLE laboratory_requests ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
   "ALTER TABLE invoices ADD COLUMN consultation_case_id INTEGER REFERENCES consultation_cases(id)",
   "CREATE INDEX IF NOT EXISTS idx_prescriptions_case ON prescriptions(consultation_case_id)",
   "CREATE INDEX IF NOT EXISTS idx_lab_requests_case ON laboratory_requests(consultation_case_id)",
-  "CREATE INDEX IF NOT EXISTS idx_invoices_case ON invoices(consultation_case_id)"
+  "CREATE INDEX IF NOT EXISTS idx_invoices_case ON invoices(consultation_case_id)",
 ]) {
-  try { db.exec(statement); } catch (_) { /* column or index already exists */ }
+  try {
+    db.exec(statement);
+  } catch (_) {
+    // Column or index already exists.
+  }
+}
+
+// Add appointment and service fields to existing consultation cases.
+for (const statement of [
+  "ALTER TABLE consultation_cases ADD COLUMN appointment_id INTEGER",
+  "ALTER TABLE consultation_cases ADD COLUMN service_type TEXT",
+  "CREATE INDEX IF NOT EXISTS idx_cases_appointment ON consultation_cases(appointment_id)",
+]) {
+  try {
+    db.exec(statement);
+  } catch (_) {
+    // Column or index already exists.
+  }
 }
 
 module.exports = db;

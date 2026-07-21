@@ -267,6 +267,187 @@ router.post("/patients", (req, res) => {
   }
 });
 
+
+router.put("/patients/:id", (req, res) => {
+  try {
+    const patientId = Number(req.params.id);
+
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      return res.status(400).json({
+        message: "Invalid patient ID.",
+      });
+    }
+
+    const existingPatient = db
+      .prepare(`
+        SELECT *
+        FROM patients
+        WHERE id = ?
+      `)
+      .get(patientId);
+
+    if (!existingPatient) {
+      return res.status(404).json({
+        message: "Patient not found.",
+      });
+    }
+
+    const allowedFields = [
+      "first_name",
+      "middle_name",
+      "last_name",
+      "birth_date",
+      "civil_status",
+      "occupation",
+      "contact_number",
+      "address",
+      "blood_type",
+      "allergies",
+      "existing_illnesses",
+      "previous_surgeries",
+      "family_history",
+      "ob_history",
+      "pregnancy_history",
+      "emergency_contact_name",
+      "emergency_contact_number",
+      "notes",
+    ];
+
+    const fields = allowedFields.filter(
+      (field) => req.body[field] !== undefined,
+    );
+
+    if (!fields.length) {
+      return res.status(400).json({
+        message: "No valid patient fields supplied.",
+      });
+    }
+
+    const firstName =
+      req.body.first_name !== undefined
+        ? String(req.body.first_name || "").trim()
+        : String(existingPatient.first_name || "").trim();
+
+    const lastName =
+      req.body.last_name !== undefined
+        ? String(req.body.last_name || "").trim()
+        : String(existingPatient.last_name || "").trim();
+
+    if (!firstName || !lastName) {
+      return res.status(400).json({
+        message: "First and last name are required.",
+      });
+    }
+
+    const values = fields.map((field) => {
+      if (field === "first_name") {
+        return firstName;
+      }
+
+      if (field === "last_name") {
+        return lastName;
+      }
+
+      const value = req.body[field];
+
+      if (
+        value === undefined ||
+        value === null ||
+        (typeof value === "string" && value.trim() === "")
+      ) {
+        return null;
+      }
+
+      return typeof value === "string"
+        ? value.trim()
+        : value;
+    });
+
+    const result = db
+      .prepare(`
+        UPDATE patients
+        SET ${fields
+          .map((field) => `${field} = ?`)
+          .join(", ")}
+        WHERE id = ?
+      `)
+      .run(...values, patientId);
+
+    if (!result.changes) {
+      return res.status(404).json({
+        message: "Patient not found.",
+      });
+    }
+
+    const updatedPatient = db
+      .prepare(`
+        SELECT *
+        FROM patients
+        WHERE id = ?
+      `)
+      .get(patientId);
+
+    res.json({
+      message: "Patient updated successfully.",
+      patient: updatedPatient,
+    });
+  } catch (err) {
+    console.error("Update patient error:", err);
+
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+});
+
+router.delete("/patients/:id", (req, res) => {
+  try {
+    const patientId = Number(req.params.id);
+
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      return res.status(400).json({
+        message: "Invalid patient ID.",
+      });
+    }
+
+    const patient = db
+      .prepare(`
+        SELECT id, is_archived
+        FROM patients
+        WHERE id = ?
+      `)
+      .get(patientId);
+
+    if (!patient) {
+      return res.status(404).json({
+        message: "Patient not found.",
+      });
+    }
+
+    if (patient.is_archived === 1) {
+      return res.json({
+        message: "Patient is already archived.",
+      });
+    }
+
+    db.prepare(`
+      UPDATE patients
+      SET is_archived = 1
+      WHERE id = ?
+    `).run(patientId);
+
+    res.json({
+      message: "Patient archived successfully.",
+    });
+  } catch (err) {
+    console.error("Archive patient error:", err);
+
+    res.status(500).json({
+      message: err.message,
+    });
+  }
+});
+
 router.patch(
   "/patients/:id/archive",
   (req, res) => {

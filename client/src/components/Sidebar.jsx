@@ -1,19 +1,102 @@
-import { Link } from "react-router-dom";
+import { useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import Logo from "../assets/OBLOGO.png";
 
 const menuItems = [
   { name: "Dashboard", icon: "⌂", path: "/dashboard" },
   { name: "Patients", icon: "♁", path: "/patients" },
   { name: "Appointments", icon: "◷", path: "/appointments" },
-  { name: "Consultations", icon: "+", path: "/consultations" },
-  { name: "Prenatal Records", icon: "♥", path: "/prenatal-records" },
-  { name: "Prescriptions", icon: "◉", path: "/prescriptions" },
+  {
+    name: "Consultations",
+    icon: "+",
+    path: "/consultations",
+    roles: ["doctor"],
+  },
+  {
+    name: "Prenatal Records",
+    icon: "♥",
+    path: "/prenatal-records",
+    roles: ["doctor"],
+  },
+  {
+    name: "Prescriptions",
+    icon: "◉",
+    path: "/prescriptions",
+    roles: ["doctor"],
+  },
   { name: "Billing", icon: "□", path: "/billing" },
   { name: "Reports", icon: "▥", path: "/reports" },
-  { name: "Backup / Restore", icon: "↻", path: "/backups" },
+  {
+    name: "Backup / Restore",
+    icon: "↻",
+    path: "/backups",
+    roles: ["doctor"],
+  },
 ];
 
+function getStoredUser() {
+  try {
+    const storedUser = localStorage.getItem("currentUser");
+
+    return storedUser ? JSON.parse(storedUser) : null;
+  } catch (error) {
+    console.error("Unable to read current user:", error);
+    return null;
+  }
+}
+
+function getInitials(fullname = "") {
+  const parts = fullname
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return "US";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 function Sidebar({ activeItem = "Dashboard" }) {
+  const navigate = useNavigate();
+
+  const currentUser = useMemo(() => getStoredUser(), []);
+
+  const visibleMenuItems = menuItems.filter((item) => {
+    if (!item.roles) {
+      return true;
+    }
+
+    return item.roles.includes(currentUser?.role);
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("currentUser");
+
+    navigate("/login", {
+      replace: true,
+    });
+  };
+
+  const fullname =
+    currentUser?.fullname ||
+    currentUser?.full_name ||
+    "Logged-in User";
+
+  const role =
+    currentUser?.role === "doctor"
+      ? "Doctor"
+      : currentUser?.role === "staff"
+        ? "Clinic Staff"
+        : "User";
+
+  const initials = getInitials(fullname);
+
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-pink-100 bg-white shadow-xl lg:flex">
       <div className="bg-linear-to-br from-pink-500 to-rose-400 px-6 py-6 text-white">
@@ -43,7 +126,7 @@ function Sidebar({ activeItem = "Dashboard" }) {
           Main Menu
         </p>
 
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const isActive =
             item.name === activeItem;
 
@@ -53,8 +136,12 @@ function Sidebar({ activeItem = "Dashboard" }) {
               : "text-gray-600 hover:bg-pink-50 hover:text-pink-600"
           }`;
 
-          const content = (
-            <>
+          return (
+            <Link
+              to={item.path}
+              key={item.name}
+              className={classes}
+            >
               <span
                 className={`absolute left-0 h-8 w-1 rounded-r-full bg-pink-500 ${
                   isActive ? "" : "hidden"
@@ -74,25 +161,7 @@ function Sidebar({ activeItem = "Dashboard" }) {
               <span className="font-medium">
                 {item.name}
               </span>
-            </>
-          );
-
-          return item.path ? (
-            <Link
-              to={item.path}
-              key={item.name}
-              className={classes}
-            >
-              {content}
             </Link>
-          ) : (
-            <button
-              key={item.name}
-              type="button"
-              className={classes}
-            >
-              {content}
-            </button>
           );
         })}
       </nav>
@@ -100,23 +169,27 @@ function Sidebar({ activeItem = "Dashboard" }) {
       <div className="border-t border-gray-100 p-4">
         <div className="flex items-center gap-3 rounded-2xl border border-pink-100 bg-linear-to-r from-pink-50 to-rose-50 p-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 font-bold text-white shadow-md">
-            DR
+            {initials}
           </div>
 
-          <div className="flex-1">
-            <h3 className="text-sm font-bold text-gray-800">
-              Dr. Maria Santos
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-bold text-gray-800">
+              {fullname}
             </h3>
 
             <p className="text-xs text-gray-500">
-              OB-GYN Specialist
+              {role}
             </p>
           </div>
 
           <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
         </div>
 
-        <button className="mt-3 w-full rounded-xl bg-red-50 py-3 font-medium text-red-500 transition hover:bg-red-100">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mt-3 w-full rounded-xl bg-red-50 py-3 font-medium text-red-500 transition hover:bg-red-100"
+        >
           Logout
         </button>
       </div>

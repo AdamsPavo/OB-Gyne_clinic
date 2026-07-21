@@ -47,7 +47,10 @@ const statuses = [
 
 const getLoggedInUser = () => {
   try {
-    const savedUser = localStorage.getItem("user");
+    const savedUser =
+      localStorage.getItem("currentUser") ||
+      localStorage.getItem("user");
+
     return savedUser ? JSON.parse(savedUser) : null;
   } catch {
     return null;
@@ -105,12 +108,13 @@ export default function Appointments() {
 
   const isDoctor = role === "doctor";
 
-  const isSecretary =
+  const isStaff =
+    role === "staff" ||
     role === "secretary" ||
     role === "admin";
 
   const canManageAppointments =
-    isDoctor || isSecretary;
+    isDoctor || isStaff;
 
   const selectedPatientFromUrl =
     searchParams.get("patient") || "";
@@ -676,7 +680,7 @@ export default function Appointments() {
               className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 font-semibold text-pink-600 shadow-sm hover:bg-pink-50"
             >
               <Plus size={19} />
-              New appointment
+              Add appointment
             </button>
           )}
         </header>
@@ -790,7 +794,7 @@ export default function Appointments() {
                 </h2>
 
                 <p className="text-sm text-slate-500">
-                  Appointment form for doctors and secretaries
+                  Select a patient and enter the appointment details.
                 </p>
               </div>
 

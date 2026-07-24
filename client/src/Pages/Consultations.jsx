@@ -21,6 +21,59 @@ import { api } from "../api/client";
 const now = () => new Date().toISOString().slice(0, 16);
 const today = () => new Date().toISOString().slice(0, 10);
 
+const toDateInput = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const calculateEstimatedDeliveryDate = (lmpDate) => {
+  if (!lmpDate) return "";
+  const lmp = new Date(`${lmpDate}T00:00:00`);
+  if (Number.isNaN(lmp.getTime())) return "";
+  lmp.setDate(lmp.getDate() + 280);
+  return toDateInput(lmp);
+};
+
+const calculateGestationalAge = (lmpDate, visitDate) => {
+  if (!lmpDate || !visitDate) return { weeks: "", days: "" };
+  const lmp = new Date(`${lmpDate}T00:00:00`);
+  const visit = new Date(visitDate);
+  if (Number.isNaN(lmp.getTime()) || Number.isNaN(visit.getTime())) {
+    return { weeks: "", days: "" };
+  }
+  const totalDays = Math.floor((visit - lmp) / 86400000);
+  if (totalDays < 0) return { weeks: "", days: "" };
+  return {
+    weeks: String(Math.floor(totalDays / 7)),
+    days: String(totalDays % 7),
+  };
+};
+
+const calculateAge = (birthDate, referenceDate = new Date()) => {
+  if (!birthDate) return null;
+  const birth = new Date(`${birthDate}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+  let age = referenceDate.getFullYear() - birth.getFullYear();
+  const monthDifference = referenceDate.getMonth() - birth.getMonth();
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && referenceDate.getDate() < birth.getDate())
+  ) {
+    age -= 1;
+  }
+  return age;
+};
+
+const parseBloodPressure = (value) => {
+  const match = String(value || "").match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+  return match
+    ? { systolic: Number(match[1]), diastolic: Number(match[2]) }
+    : { systolic: null, diastolic: null };
+};
+
 const createInitialForm = (patientId = "") => ({
   patient_id: patientId,
   appointment_id: "",
@@ -36,7 +89,49 @@ const createInitialForm = (patientId = "") => ({
   treatment: "",
   doctor_notes: "",
   follow_up_date: "",
+
+  // Prenatal fields
+  lmp_date: "",
+  expected_delivery_date: "",
+  gestational_weeks: "",
+  gestational_days: "",
+  gravida: "",
+  para: "",
+  abortion_count: "",
+  living_children: "",
+  fundal_height_cm: "",
+  fetal_heart_rate: "",
+  fetal_movement: "",
+  fetal_presentation: "",
+  number_of_fetuses: "1",
+  edema: "",
+  risk_level: "Low Risk",
+  risk_reasons: [],
+  vaginal_bleeding: false,
+  severe_headache: false,
+  blurred_vision: false,
+  severe_abdominal_pain: false,
+  chronic_hypertension: false,
+  diabetes: false,
+  previous_preeclampsia: false,
+  kidney_disease: false,
+  autoimmune_disease: false,
+  prenatal_notes: "",
+  next_prenatal_visit: "",
 });
+
+const services = [
+  "General Consultation",
+  "Prenatal Checkup",
+  "Postnatal Checkup",
+  "Gynecological Consultation",
+  "Family Planning",
+  "Ultrasound",
+  "Pap Smear",
+  "Follow-up Consultation",
+  "Laboratory Review",
+  "Other",
+];
 
 const blankMedicine = {
   medicine_name: "",
@@ -133,6 +228,9 @@ export default function Consultations() {
   const [form, setForm] = useState(() =>
     createInitialForm(patientIdFromUrl),
   );
+
+  const isPrenatal =
+    form.service_type === "Prenatal Checkup";
 
   const [prescription, setPrescription] =
     useState({
@@ -250,6 +348,76 @@ export default function Consultations() {
       String(form.patient_id),
   );
 
+  const prenatalRiskAssessment = (() => {
+    const reasons = [];
+    const urgentReasons = [];
+    const visitDate = form.consultation_date
+      ? new Date(form.consultation_date)
+      : new Date();
+    const age = calculateAge(selectedPatient?.birth_date, visitDate);
+    const { systolic, diastolic } = parseBloodPressure(form.blood_pressure);
+    const fetuses = Number(form.number_of_fetuses || 1);
+
+    if (form.vaginal_bleeding) urgentReasons.push("Vaginal bleeding");
+    if (form.severe_headache) urgentReasons.push("Severe or persistent headache");
+    if (form.blurred_vision) urgentReasons.push("Blurred vision");
+    if (form.severe_abdominal_pain) urgentReasons.push("Severe abdominal pain");
+    if (["Decreased", "Absent"].includes(form.fetal_movement)) {
+      urgentReasons.push(`${form.fetal_movement} fetal movement`);
+    }
+    if (systolic >= 140 || diastolic >= 90) {
+      urgentReasons.push(`Elevated blood pressure (${form.blood_pressure})`);
+    }
+    if (form.edema === "Severe") urgentReasons.push("Severe edema");
+
+    if (age !== null && age >= 35) reasons.push(`Maternal age ${age}`);
+    if (age !== null && age < 18) reasons.push(`Maternal age ${age}`);
+    if (fetuses > 1) reasons.push("Multiple pregnancy");
+    if (form.chronic_hypertension) reasons.push("Chronic hypertension");
+    if (form.diabetes) reasons.push("Diabetes");
+    if (form.previous_preeclampsia) reasons.push("Previous preeclampsia");
+    if (form.kidney_disease) reasons.push("Kidney disease");
+    if (form.autoimmune_disease) reasons.push("Autoimmune disease");
+    if (Number(form.abortion_count || 0) >= 2) reasons.push("Two or more previous pregnancy losses");
+    if (form.edema === "Moderate") reasons.push("Moderate edema");
+
+    const allReasons = [...urgentReasons, ...reasons];
+    let level = "Low Risk";
+    if (urgentReasons.length || reasons.length >= 2) level = "High Risk";
+    else if (reasons.length === 1) level = "Moderate Risk";
+
+    return { level, reasons: allReasons, urgent: urgentReasons.length > 0 };
+  })();
+
+  useEffect(() => {
+    if (!isPrenatal || !form.lmp_date) return;
+    const gestationalAge = calculateGestationalAge(
+      form.lmp_date,
+      form.consultation_date,
+    );
+    const estimatedDeliveryDate = calculateEstimatedDeliveryDate(form.lmp_date);
+
+    setForm((current) => ({
+      ...current,
+      expected_delivery_date: estimatedDeliveryDate,
+      gestational_weeks: gestationalAge.weeks,
+      gestational_days: gestationalAge.days,
+    }));
+  }, [isPrenatal, form.lmp_date, form.consultation_date]);
+
+  useEffect(() => {
+    if (!isPrenatal) return;
+    setForm((current) => ({
+      ...current,
+      risk_level: prenatalRiskAssessment.level,
+      risk_reasons: prenatalRiskAssessment.reasons,
+    }));
+  }, [
+    isPrenatal,
+    prenatalRiskAssessment.level,
+    prenatalRiskAssessment.reasons.join("|"),
+  ]);
+
   const filteredPatients = patients
     .filter((patient) => {
       const searchValue = patientSearch
@@ -314,6 +482,13 @@ export default function Consultations() {
     setForm((currentForm) => ({
       ...currentForm,
       [key]: event.target.value,
+    }));
+  };
+
+  const setCheck = (key) => (event) => {
+    setForm((currentForm) => ({
+      ...currentForm,
+      [key]: event.target.checked,
     }));
   };
 
@@ -430,6 +605,33 @@ export default function Consultations() {
         );
       }
 
+      if (isPrenatal) {
+        if (!form.lmp_date) {
+          throw new Error(
+            "Last menstrual period is required for a prenatal consultation.",
+          );
+        }
+
+        if (
+          form.gestational_weeks === "" ||
+          Number(form.gestational_weeks) < 0
+        ) {
+          throw new Error(
+            "Please enter the gestational age in weeks.",
+          );
+        }
+
+        if (
+          form.gestational_days !== "" &&
+          (Number(form.gestational_days) < 0 ||
+            Number(form.gestational_days) > 6)
+        ) {
+          throw new Error(
+            "Gestational days must be between 0 and 6.",
+          );
+        }
+      }
+
       const diagnoses = form.diagnoses
         .split("\n")
         .map((diagnosis) =>
@@ -473,6 +675,104 @@ export default function Consultations() {
           body: JSON.stringify(body),
         },
       );
+
+      let prenatalRecord = null;
+
+      if (isPrenatal) {
+        prenatalRecord = await api(
+          "/prenatal-records",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              patient_id: Number(form.patient_id),
+              consultation_case_id: record.id,
+              appointment_id:
+                form.appointment_id ||
+                appointmentIdFromUrl
+                  ? Number(
+                      form.appointment_id ||
+                        appointmentIdFromUrl,
+                    )
+                  : null,
+              doctor_id: currentUser.id || null,
+              visit_date: form.consultation_date,
+              service_type: form.service_type,
+              lmp_date: form.lmp_date || null,
+              estimated_delivery_date:
+                  form.expected_delivery_date || null,
+              gestational_weeks:
+                form.gestational_weeks !== ""
+                  ? Number(form.gestational_weeks)
+                  : null,
+              gestational_days:
+                form.gestational_days !== ""
+                  ? Number(form.gestational_days)
+                  : 0,
+              gravida:
+                form.gravida !== ""
+                  ? Number(form.gravida)
+                  : null,
+              para:
+                form.para !== ""
+                  ? Number(form.para)
+                  : null,
+              abortion_count:
+                form.abortion_count !== ""
+                  ? Number(form.abortion_count)
+                  : null,
+              living_children:
+                form.living_children !== ""
+                  ? Number(form.living_children)
+                  : null,
+              number_of_fetuses:
+                form.number_of_fetuses !== ""
+                  ? Number(form.number_of_fetuses)
+                  : 1,
+              blood_pressure:
+                form.blood_pressure || null,
+              temperature_c:
+                form.temperature_c !== ""
+                  ? Number(form.temperature_c)
+                  : null,
+              weight_kg:
+                form.weight_kg !== ""
+                  ? Number(form.weight_kg)
+                  : null,
+              height_cm:
+                form.height_cm !== ""
+                  ? Number(form.height_cm)
+                  : null,
+              fundal_height_cm:
+                form.fundal_height_cm !== ""
+                  ? Number(form.fundal_height_cm)
+                  : null,
+              fetal_heart_rate:
+                form.fetal_heart_rate !== ""
+                  ? Number(form.fetal_heart_rate)
+                  : null,
+              fetal_movement:
+                form.fetal_movement || null,
+              fetal_presentation:
+                form.fetal_presentation || null,
+              edema: form.edema || null,
+              risk_level:
+                form.risk_level || "Low Risk",
+              assessment:
+                diagnoses.join(", ") || null,
+              treatment:
+                form.treatment.trim() || null,
+              notes:
+                form.prenatal_notes.trim() ||
+                form.doctor_notes.trim() ||
+                null,
+              next_visit_date:
+                form.next_prenatal_visit ||
+                form.follow_up_date ||
+                null,
+            }),
+          },
+        );
+      }
 
       const medicineItems =
         prescription.items
@@ -603,6 +903,10 @@ export default function Consultations() {
       }
 
       const extras = [
+        isPrenatal && prenatalRecord
+          ? "prenatal record"
+          : "",
+
         medicineItems.length
           ? "prescription"
           : "",
@@ -625,9 +929,16 @@ export default function Consultations() {
       );
 
       setTimeout(() => {
-        navigate(
-          `/cases/${record.id}`,
-        );
+        if (isPrenatal) {
+          navigate(
+            `/prenatal-records?patient=${form.patient_id}&record=${
+              prenatalRecord?.id || ""
+            }`,
+          );
+          return;
+        }
+
+        navigate(`/cases/${record.id}`);
       }, 800);
     } catch (error) {
       setResult(error.message);
@@ -650,6 +961,7 @@ export default function Consultations() {
         value={form[key]}
         onChange={set(key)}
         min={options.min}
+        max={options.max}
         step={options.step}
         required={options.required}
         className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
@@ -970,36 +1282,33 @@ export default function Consultations() {
 
               <div className="mt-5 grid gap-4 md:grid-cols-3">
                 <label className="text-sm font-medium text-slate-600">
-                  Type of service
+  Type of Service
 
-                  <input
-                    type="text"
-                    value={form.service_type}
-                    readOnly={Boolean(
-                      appointmentIdFromUrl,
-                    )}
-                    onChange={set(
-                      "service_type",
-                    )}
-                    placeholder={
-                      appointmentIdFromUrl
-                        ? "Loaded from appointment"
-                        : "Enter type of service"
-                    }
-                    className={`mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none transition ${
-                      appointmentIdFromUrl
-                        ? "cursor-not-allowed bg-slate-100 text-slate-700"
-                        : "bg-white focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-                    }`}
-                  />
+  <select
+    value={form.service_type}
+    onChange={set("service_type")}
+    disabled={Boolean(appointmentIdFromUrl)}
+    className={`mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none transition ${
+      appointmentIdFromUrl
+        ? "cursor-not-allowed bg-slate-100 text-slate-700"
+        : "focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+    }`}
+  >
+    <option value="">Select service</option>
 
-                  {appointmentIdFromUrl && (
-                    <span className="mt-1 block text-xs text-teal-600">
-                      Automatically loaded from
-                      the appointment.
-                    </span>
-                  )}
-                </label>
+    {services.map((service) => (
+      <option key={service} value={service}>
+        {service}
+      </option>
+    ))}
+  </select>
+
+  {appointmentIdFromUrl && (
+    <span className="mt-1 block text-xs text-teal-600">
+      Automatically loaded from the appointment.
+    </span>
+  )}
+</label>
 
                 {field(
                   "consultation_date",
@@ -1090,6 +1399,241 @@ export default function Consultations() {
                   },
                 )}
               </div>
+
+              {isPrenatal && (
+                <section className="mt-7 rounded-3xl border border-pink-100 bg-pink-50/50 p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">
+                      🤰
+                    </div>
+
+                    <div>
+                      <h3 className="font-bold text-slate-800">
+                        Prenatal assessment
+                      </h3>
+
+                      <p className="text-sm text-slate-500">
+                        These details will be saved to the patient&apos;s prenatal record.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                    {field(
+                      "lmp_date",
+                      "Last menstrual period (LMP)",
+                      "date",
+                      { required: true },
+                    )}
+
+                    <label className="text-sm font-medium text-slate-600">
+                      Estimated delivery date (EDD)
+                      <input
+                        type="date"
+                        value={form.expected_delivery_date}
+                        readOnly
+                        className="mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-slate-700"
+                      />
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Automatically estimated as 280 days from the LMP.
+                      </span>
+                    </label>
+
+                    {field(
+                      "gestational_weeks",
+                      "Gestational age — weeks",
+                      "number",
+                      { min: "0", required: true },
+                    )}
+
+                    {field(
+                      "gestational_days",
+                      "Additional days",
+                      "number",
+                      { min: "0", max: "6" },
+                    )}
+                  </div>
+
+                  <h4 className="mt-6 font-semibold text-slate-700">
+                    Obstetric history
+                  </h4>
+
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    {field("gravida", "Gravida", "number", { min: "0" })}
+                    {field("para", "Para", "number", { min: "0" })}
+                    {field("abortion_count", "Abortions", "number", { min: "0" })}
+                    {field("living_children", "Living children", "number", { min: "0" })}
+                    {field("number_of_fetuses", "Number of fetuses", "number", { min: "1" })}
+                  </div>
+
+                  <h4 className="mt-6 font-semibold text-slate-700">
+                    Fetal assessment
+                  </h4>
+
+                  <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    {field(
+                      "fundal_height_cm",
+                      "Fundal height (cm)",
+                      "number",
+                      { min: "0", step: "0.1" },
+                    )}
+
+                    {field(
+                      "fetal_heart_rate",
+                      "Fetal heart rate (bpm)",
+                      "number",
+                      { min: "0" },
+                    )}
+
+                    <label className="text-sm font-medium text-slate-600">
+                      Fetal movement
+                      <select
+                        value={form.fetal_movement}
+                        onChange={set("fetal_movement")}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-100"
+                      >
+                        <option value="">Select fetal movement</option>
+                        <option value="Not Yet Perceived">Not Yet Perceived</option>
+                        <option value="Present">Present</option>
+                        <option value="Decreased">Decreased</option>
+                        <option value="Absent">Absent</option>
+                      </select>
+                    </label>
+
+                    <label className="text-sm font-medium text-slate-600">
+                      Fetal presentation
+                      <select
+                        value={form.fetal_presentation}
+                        onChange={set("fetal_presentation")}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-100"
+                      >
+                        <option value="">Select presentation</option>
+                        <option value="Not Yet Determined">Not Yet Determined</option>
+                        <option value="Cephalic">Cephalic</option>
+                        <option value="Breech">Breech</option>
+                        <option value="Transverse">Transverse</option>
+                        <option value="Oblique">Oblique</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 md:grid-cols-3">
+                    <label className="text-sm font-medium text-slate-600">
+                      Edema
+                      <select
+                        value={form.edema}
+                        onChange={set("edema")}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-100"
+                      >
+                        <option value="">Select edema status</option>
+                        <option value="None">None</option>
+                        <option value="Mild">Mild</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Severe">Severe</option>
+                      </select>
+                    </label>
+
+                    <label className="text-sm font-medium text-slate-600">
+                      System risk screening
+                      <input
+                        value={form.risk_level}
+                        readOnly
+                        className={`mt-1 w-full cursor-not-allowed rounded-xl border px-3 py-2.5 font-semibold ${
+                          form.risk_level === "High Risk"
+                            ? "border-rose-300 bg-rose-50 text-rose-700"
+                            : form.risk_level === "Moderate Risk"
+                              ? "border-amber-300 bg-amber-50 text-amber-700"
+                              : "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        }`}
+                      />
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Screening aid only; the doctor must confirm the assessment.
+                      </span>
+                    </label>
+
+                    {field(
+                      "next_prenatal_visit",
+                      "Next prenatal visit",
+                      "date",
+                    )}
+                  </div>
+
+                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
+                    <h4 className="font-semibold text-slate-700">
+                      Risk factors and warning signs
+                    </h4>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Select every condition reported or observed during this visit.
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {[
+                        ["vaginal_bleeding", "Vaginal bleeding"],
+                        ["severe_headache", "Severe or persistent headache"],
+                        ["blurred_vision", "Blurred vision"],
+                        ["severe_abdominal_pain", "Severe abdominal pain"],
+                        ["chronic_hypertension", "Chronic hypertension"],
+                        ["diabetes", "Diabetes"],
+                        ["previous_preeclampsia", "Previous preeclampsia"],
+                        ["kidney_disease", "Kidney disease"],
+                        ["autoimmune_disease", "Autoimmune disease"],
+                      ].map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-700 hover:bg-pink-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(form[key])}
+                            onChange={setCheck(key)}
+                            className="h-4 w-4 rounded border-slate-300 text-pink-600 focus:ring-pink-500"
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className={`mt-4 rounded-xl p-4 ${
+                      prenatalRiskAssessment.urgent
+                        ? "bg-rose-50 text-rose-800"
+                        : form.risk_level === "Moderate Risk"
+                          ? "bg-amber-50 text-amber-800"
+                          : "bg-emerald-50 text-emerald-800"
+                    }`}>
+                      <p className="font-semibold">
+                        Result: {form.risk_level}
+                      </p>
+                      {form.risk_reasons.length ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                          {form.risk_reasons.map((reason) => (
+                            <li key={reason}>{reason}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-sm">
+                          No configured risk factor was detected from the entered data.
+                        </p>
+                      )}
+                      {prenatalRiskAssessment.urgent && (
+                        <p className="mt-3 text-sm font-semibold">
+                          Warning sign detected. The patient needs prompt clinical assessment.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <label className="mt-5 block text-sm font-medium text-slate-600">
+                    Prenatal findings and notes
+                    <textarea
+                      rows="4"
+                      value={form.prenatal_notes}
+                      onChange={set("prenatal_notes")}
+                      placeholder="Additional maternal and fetal observations"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-100"
+                    />
+                  </label>
+                </section>
+              )}
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-medium text-slate-600">

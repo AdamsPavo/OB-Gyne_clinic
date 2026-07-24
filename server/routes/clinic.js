@@ -1343,6 +1343,131 @@ router.post("/backups", (req, res) => {
   }
 });
 
+
+/* =========================================================
+   PRENATAL RECORDS
+========================================================= */
+
+const prenatalRecordsSelect = `
+  SELECT
+    pr.*,
+
+    p.patient_number,
+    p.first_name,
+    p.middle_name,
+    p.last_name,
+    p.birth_date,
+    p.contact_number,
+    p.address,
+
+    TRIM(
+      p.first_name || ' ' ||
+      COALESCE(p.middle_name || ' ', '') ||
+      p.last_name
+    ) AS patient_name
+
+  FROM prenatal_records pr
+
+  LEFT JOIN patients p
+    ON p.id = pr.patient_id
+`;
+
+router.get("/prenatal-records", (req, res) => {
+  try {
+    const patientId = Number(
+      req.query.patient_id,
+    );
+
+    const rows =
+      Number.isInteger(patientId) &&
+      patientId > 0
+        ? db
+            .prepare(`
+              ${prenatalRecordsSelect}
+
+              WHERE pr.patient_id = ?
+
+              ORDER BY
+                pr.visit_date DESC,
+                pr.id DESC
+            `)
+            .all(patientId)
+        : db
+            .prepare(`
+              ${prenatalRecordsSelect}
+
+              ORDER BY
+                pr.visit_date DESC,
+                pr.id DESC
+            `)
+            .all();
+
+    res.json(rows);
+  } catch (err) {
+    console.error(
+      "Load prenatal records error:",
+      err,
+    );
+
+    res.status(500).json({
+      message:
+        "Unable to load prenatal records.",
+      error: err.message,
+    });
+  }
+});
+
+router.get(
+  "/prenatal-records/:id",
+  (req, res) => {
+    try {
+      const prenatalRecordId = Number(
+        req.params.id,
+      );
+
+      if (
+        !Number.isInteger(
+          prenatalRecordId,
+        ) ||
+        prenatalRecordId <= 0
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid prenatal record ID.",
+        });
+      }
+
+      const row = db
+        .prepare(`
+          ${prenatalRecordsSelect}
+
+          WHERE pr.id = ?
+        `)
+        .get(prenatalRecordId);
+
+      if (!row) {
+        return res.status(404).json({
+          message:
+            "Prenatal record not found.",
+        });
+      }
+
+      res.json(row);
+    } catch (err) {
+      console.error(
+        "Load prenatal record error:",
+        err,
+      );
+
+      res.status(500).json({
+        message:
+          "Unable to load prenatal record.",
+        error: err.message,
+      });
+    }
+  },
+);
+
 /* =========================================================
    GENERIC RESOURCES
 ========================================================= */

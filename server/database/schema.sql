@@ -556,3 +556,78 @@ CREATE TABLE backup_logs (
     ON DELETE SET NULL
     ON UPDATE CASCADE
 );
+
+
+-- =========================================================
+-- preNATAL RECORDS
+-- =========================================================
+CREATE TABLE prenatal_records (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+    consultation_case_id BIGINT UNSIGNED NOT NULL,
+    patient_id BIGINT UNSIGNED NOT NULL,
+    doctor_id BIGINT UNSIGNED NOT NULL,
+
+    visit_date DATETIME NOT NULL,
+
+    lmp_date DATE,
+    estimated_delivery_date DATE,
+
+    gestational_weeks INT,
+    gestational_days INT,
+
+    gravida INT,
+    para INT,
+    abortion_count INT,
+    living_children INT,
+
+    blood_pressure VARCHAR(20),
+    temperature_c DECIMAL(4,1),
+    weight_kg DECIMAL(6,2),
+    height_cm DECIMAL(6,2),
+
+    fundal_height_cm DECIMAL(5,2),
+    fetal_heart_rate INT,
+    fetal_movement VARCHAR(50),
+    fetal_presentation VARCHAR(50),
+
+    edema VARCHAR(50),
+
+    risk_level ENUM(
+        'Low Risk',
+        'Moderate Risk',
+        'High Risk'
+    ) NOT NULL,
+
+    risk_reasons TEXT,
+
+    assessment TEXT,
+    treatment TEXT,
+    notes TEXT,
+
+    next_visit_date DATE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    INDEX idx_prenatal_patient (patient_id),
+    INDEX idx_prenatal_case (consultation_case_id),
+
+    CONSTRAINT fk_prenatal_case
+        FOREIGN KEY (consultation_case_id)
+        REFERENCES consultation_cases(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_prenatal_patient
+        FOREIGN KEY (patient_id)
+        REFERENCES patients(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_prenatal_doctor
+        FOREIGN KEY (doctor_id)
+        REFERENCES users(id)
+        ON DELETE RESTRICT
+);

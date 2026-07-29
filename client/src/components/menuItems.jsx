@@ -1,4 +1,4 @@
-import { CalendarDays, ClipboardPlus, CreditCard, FileBarChart, FlaskConical, HeartPulse, LayoutDashboard, Pill, Settings, Users } from "lucide-react";
+import { Boxes, CalendarDays, ClipboardPlus, CreditCard, FileBarChart, FlaskConical, HeartPulse, LayoutDashboard, Pill, ReceiptText, Users, Wrench } from "lucide-react";
 
 export const menuItems = [
   { name: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={19} /> },
@@ -10,5 +10,7 @@ export const menuItems = [
   { name: "Laboratory", path: "/laboratory-requests", icon: <FlaskConical size={19} /> },
   { name: "Billing", path: "/billing", icon: <CreditCard size={19} /> },
   { name: "Reports", path: "/reports", icon: <FileBarChart size={19} /> },
-  { name: "Settings", path: "/settings", icon: <Settings size={19} /> },
+  { name: "Tools", path: "/tools", icon: <Wrench size={19} /> },
+  { name: "Inventory", path: "/inventory", icon: <Boxes size={19} /> },
+  { name: "Patient Charges", path: "/patient-charges", icon: <ReceiptText size={19} /> },
 ];

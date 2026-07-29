@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Banknote,
   CheckCircle2,
-  Clock3,
   CreditCard,
   Edit3,
   PhilippinePeso,
@@ -16,6 +15,7 @@ import {
 
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
+import { Link } from "react-router-dom";
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-PH", {
@@ -63,7 +63,14 @@ const getStatusStyle = (status) => {
       return "bg-emerald-50 text-emerald-700 ring-emerald-200";
 
     case "Partial":
+    case "Partially Paid":
       return "bg-amber-50 text-amber-700 ring-amber-200";
+
+    case "Unpaid":
+      return "bg-red-50 text-red-700 ring-red-200";
+
+    case "Cancelled":
+      return "bg-slate-100 text-slate-500 ring-slate-200";
 
     default:
       return "bg-slate-100 text-slate-600 ring-slate-200";
@@ -73,10 +80,14 @@ const getStatusStyle = (status) => {
 export default function Billing() {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
+  const [pendingSearch, setPendingSearch] =
+    useState("");
   const [statusFilter, setStatusFilter] =
     useState("All");
 
   const [selectedInvoice, setSelectedInvoice] =
+    useState(null);
+  const [billingFocus, setBillingFocus] =
     useState(null);
 
   const [showCashier, setShowCashier] =
@@ -92,6 +103,12 @@ export default function Billing() {
     useState("Cash");
 
   const [cashReceived, setCashReceived] =
+    useState("");
+  const [discountType, setDiscountType] =
+    useState("Percentage");
+  const [discountValue, setDiscountValue] =
+    useState("");
+  const [discountReason, setDiscountReason] =
     useState("");
 
   const [error, setError] = useState("");
@@ -110,6 +127,19 @@ export default function Billing() {
       const data = await api("/billings");
 
       setRows(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data.length && !billingFocus) {
+        const preferred =
+          data.find((invoice) => {
+            const status = getStatus(invoice);
+            return status !== "Paid" && status !== "Cancelled";
+          }) || data[0];
+        const detail = await api(`/invoices/${preferred.id}/details`);
+        setBillingFocus({
+          ...detail,
+          patient_name:
+            `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+        });
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -120,41 +150,6 @@ export default function Billing() {
   useEffect(() => {
     loadBillings();
   }, []);
-
-  const summary = useMemo(() => {
-    return rows.reduce(
-      (totals, invoice) => {
-        const total = Number(
-          invoice.total_amount || 0,
-        );
-
-        const paid = Number(
-          invoice.paid_amount || 0,
-        );
-
-        const balance = Math.max(
-          total - paid,
-          0,
-        );
-
-        totals.totalBilled += total;
-        totals.totalCollected += paid;
-        totals.outstanding += balance;
-
-        if (getStatus(invoice) === "Paid") {
-          totals.paidInvoices += 1;
-        }
-
-        return totals;
-      },
-      {
-        totalBilled: 0,
-        totalCollected: 0,
-        outstanding: 0,
-        paidInvoices: 0,
-      },
-    );
-  }, [rows]);
 
   const filteredRows = useMemo(() => {
     const keyword = search
@@ -186,13 +181,37 @@ export default function Billing() {
     });
   }, [rows, search, statusFilter]);
 
-  const openCashier = (invoice) => {
+  const pendingBills = useMemo(() => {
+    const keyword = pendingSearch.trim().toLowerCase();
+    return rows.filter((invoice) => {
+      const isPending =
+        getStatus(invoice) !== "Paid" &&
+        getStatus(invoice) !== "Cancelled";
+      const searchable = [
+        invoice.patient_name,
+        invoice.patient_number,
+        invoice.invoice_number,
+        invoice.case_number,
+      ].filter(Boolean).join(" ").toLowerCase();
+      return isPending && (!keyword || searchable.includes(keyword));
+    });
+  }, [rows, pendingSearch]);
+
+  const openCashier = async (invoice) => {
+    let detailedInvoice = invoice;
+    try {
+      detailedInvoice = await api(`/invoices/${invoice.id}/details`);
+      detailedInvoice.patient_name =
+        `${detailedInvoice.first_name || ""} ${detailedInvoice.last_name || ""}`.trim();
+    } catch (err) {
+      setError(err.message);
+    }
     const total = Number(
-      invoice.total_amount || 0,
+      detailedInvoice.grand_total || detailedInvoice.total_amount || 0,
     );
 
     const paid = Number(
-      invoice.paid_amount || 0,
+      detailedInvoice.paid_amount || 0,
     );
 
     const balance = Math.max(
@@ -200,7 +219,7 @@ export default function Billing() {
       0,
     );
 
-    setSelectedInvoice(invoice);
+    setSelectedInvoice(detailedInvoice);
     setTotalAmount(
       total > 0 ? String(total) : "",
     );
@@ -211,9 +230,26 @@ export default function Billing() {
 
     setPaymentMethod("Cash");
     setCashReceived("");
+    setDiscountType("Percentage");
+    setDiscountValue("");
+    setDiscountReason("");
     setError("");
     setMessage("");
     setShowCashier(true);
+  };
+
+  const focusBill = async (invoice) => {
+    try {
+      setError("");
+      const detail = await api(`/invoices/${invoice.id}/details`);
+      setBillingFocus({
+        ...detail,
+        patient_name:
+          `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+      });
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const closeCashier = () => {
@@ -259,95 +295,6 @@ export default function Billing() {
           0,
         )
       : 0;
-
-  const updateLocalInvoice = (
-    invoiceId,
-    updates,
-  ) => {
-    setRows((previous) =>
-      previous.map((invoice) =>
-        Number(invoice.id) ===
-        Number(invoiceId)
-          ? {
-              ...invoice,
-              ...updates,
-            }
-          : invoice,
-      ),
-    );
-  };
-
-  const saveBillOnly = async () => {
-    if (!selectedInvoice) {
-      return;
-    }
-
-    if (
-      !Number.isFinite(enteredTotal) ||
-      enteredTotal <= 0
-    ) {
-      setError(
-        "Please enter a valid total bill.",
-      );
-
-      return;
-    }
-
-    if (enteredTotal < currentPaid) {
-      setError(
-        "The total bill cannot be lower than the amount already paid.",
-      );
-
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      setError("");
-      setMessage("");
-
-      await api(
-        `/invoices/${selectedInvoice.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            total_amount: enteredTotal,
-          }),
-        },
-      );
-
-      const status =
-        currentPaid >= enteredTotal
-          ? "Paid"
-          : currentPaid > 0
-            ? "Partial"
-            : "Pending";
-
-      updateLocalInvoice(
-        selectedInvoice.id,
-        {
-          total_amount: enteredTotal,
-          payment_status: status,
-        },
-      );
-
-      setSelectedInvoice((previous) => ({
-        ...previous,
-        total_amount: enteredTotal,
-        payment_status: status,
-      }));
-
-      setMessage(
-        "Billing amount saved successfully.",
-      );
-
-      await loadBillings();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const collectPayment = async () => {
     if (!selectedInvoice) {
@@ -430,38 +377,19 @@ export default function Billing() {
       );
 
       await api(
-        `/billings/${selectedInvoice.id}/payments`,
+        `/invoices/${selectedInvoice.id}/payments`,
         {
           method: "POST",
           body: JSON.stringify({
             amount: enteredPayment,
             payment_method: paymentMethod,
+            payment_date: new Date().toISOString(),
+            received_by:
+              JSON.parse(localStorage.getItem("currentUser") || "{}").fullname ||
+              "Billing user",
           }),
         },
-      ).catch(async (firstError) => {
-        /*
-         * The existing backend payment route uses
-         * the consultation case ID.
-         */
-        const caseId =
-          selectedInvoice.consultation_case_id;
-
-        if (!caseId) {
-          throw firstError;
-        }
-
-        return api(
-          `/billings/${caseId}/payments`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              amount: enteredPayment,
-              payment_method:
-                paymentMethod,
-            }),
-          },
-        );
-      });
+      );
 
       const updatedPaid =
         currentPaid + enteredPayment;
@@ -511,6 +439,72 @@ export default function Billing() {
 
       setCashReceived("");
 
+      await loadBillings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const applyDiscount = async () => {
+    if (!selectedInvoice) return;
+    const value = Number(discountValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Enter a positive discount.");
+      return;
+    }
+    if (discountType === "Percentage" && value > 100) {
+      setError("Percentage discount cannot exceed 100%.");
+      return;
+    }
+    if (!discountReason.trim()) {
+      setError("Enter a reason for the discount.");
+      return;
+    }
+    const base = Number(
+      selectedInvoice.grand_total ||
+      selectedInvoice.total_amount ||
+      0,
+    );
+    const discountAmount =
+      discountType === "Percentage"
+        ? Number((base * value / 100).toFixed(2))
+        : value;
+    if (discountAmount > base) {
+      setError("Discount cannot exceed the current bill total.");
+      return;
+    }
+    if (!window.confirm(
+      `Apply a ${formatCurrency(discountAmount)} discount to this invoice?`,
+    )) return;
+    try {
+      setSubmitting(true);
+      setError("");
+      await api(`/invoices/${selectedInvoice.id}/adjustments`, {
+        method: "POST",
+        body: JSON.stringify({
+          adjustment_type: "Deduction",
+          amount: discountAmount,
+          reason: `${discountReason.trim()} (${discountType}: ${value}${discountType === "Percentage" ? "%" : ""})`,
+          created_by:
+            JSON.parse(localStorage.getItem("currentUser") || "{}").fullname ||
+            "Billing user",
+        }),
+      });
+      const detail = await api(`/invoices/${selectedInvoice.id}/details`);
+      const refreshed = {
+        ...detail,
+        patient_name:
+          `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+      };
+      setSelectedInvoice(refreshed);
+      setBillingFocus(refreshed);
+      setTotalAmount(String(detail.grand_total || detail.total_amount || 0));
+      setPaymentAmount(String(detail.remaining_balance || 0));
+      setDiscountValue("");
+      setDiscountReason("");
+      setMessage("Discount applied and invoice recalculated.");
       await loadBillings();
     } catch (err) {
       setError(err.message);
@@ -843,6 +837,27 @@ export default function Billing() {
     receiptWindow.document.close();
   };
 
+  const printStatement = () => {
+    if (!selectedInvoice) return;
+    const win = window.open("", "_blank", "width=900,height=900");
+    if (!win) return;
+    const rows = (selectedInvoice.items || []).map((item) => `<tr>
+      <td>${item.description}</td><td>${item.category}</td><td>${item.quantity}</td>
+      <td>${formatCurrency(item.unit_price)}</td><td>${formatCurrency(item.item_discount)}</td>
+      <td>${formatCurrency(item.final_amount)}</td></tr>`).join("");
+    win.document.write(`<!doctype html><html><head><title>${selectedInvoice.invoice_number}</title>
+      <style>@page{size:A4;margin:12mm}body{font:12px Arial;color:#1e293b}.head{padding:18px;color:white;background:#db2777}h1{margin:0}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}.summary{margin:20px 0 0 auto;width:280px}.summary p{display:flex;justify-content:space-between}.sign{display:flex;justify-content:space-between;margin-top:60px}.sign div{width:42%;border-top:1px solid;padding-top:7px;text-align:center}</style>
+      </head><body><div class="head"><h1>${selectedInvoice.clinic_name || "OB-GYN Clinic"}</h1><p>${selectedInvoice.clinic_address || ""}</p></div>
+      <h2>Statement of Account — ${selectedInvoice.invoice_number}</h2>
+      <p><b>Patient:</b> ${selectedInvoice.patient_name || ""} (${selectedInvoice.patient_number || ""})</p>
+      <p><b>Case:</b> ${selectedInvoice.case_number || "Miscellaneous"} &nbsp; <b>Service:</b> ${selectedInvoice.service_type || "—"}</p>
+      <table><thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Final</th></tr></thead><tbody>${rows || "<tr><td colspan='6'>No itemized charges.</td></tr>"}</tbody></table>
+      <div class="summary"><p><span>Grand Total</span><b>${formatCurrency(selectedInvoice.grand_total || selectedInvoice.total_amount)}</b></p><p><span>Amount Paid</span><b>${formatCurrency(selectedInvoice.paid_amount)}</b></p><p><span>Remaining Balance</span><b>${formatCurrency(Math.max(0,Number(selectedInvoice.grand_total || selectedInvoice.total_amount || 0)-Number(selectedInvoice.paid_amount || 0)))}</b></p><p><span>Status</span><b>${selectedInvoice.payment_status}</b></p></div>
+      <div class="sign"><div>Prepared By</div><div>Received By / Patient Signature</div></div>
+      <script>window.onload=()=>window.print()</script></body></html>`);
+    win.document.close();
+  };
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar activeItem="Billing" />
@@ -867,66 +882,147 @@ export default function Billing() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={loadBillings}
-              disabled={loading}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-pink-600 shadow-sm transition hover:bg-pink-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <RefreshCw
-                size={18}
-                className={
-                  loading ? "animate-spin" : ""
-                }
-              />
-
-              Refresh records
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={loadBillings}
+                disabled={loading}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-pink-600 shadow-sm transition hover:bg-pink-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+                Refresh records
+              </button>
+            </div>
           </div>
         </header>
 
         <main className="space-y-6 px-4 pb-10 sm:px-6">
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard
-              title="Total billed"
-              value={formatCurrency(
-                summary.totalBilled,
-              )}
-              description="Value of all invoices"
-              icon={ReceiptText}
-              iconClass="bg-pink-100 text-pink-600"
-            />
+          <section className="grid min-h-125 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+              {billingFocus ? (
+                <>
+                  <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-5 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-pink-500">
+                        Selected Patient Bill
+                      </p>
+                      <h2 className="mt-1 text-2xl font-bold text-slate-900">
+                        {billingFocus.patient_name || "Patient"}
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Patient ID: {billingFocus.patient_number || `#${billingFocus.patient_id}`}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={`/patient-charges?patient=${billingFocus.patient_id}${
+                          billingFocus.consultation_case_id
+                            ? `&case=${billingFocus.consultation_case_id}`
+                            : ""
+                        }`}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 font-bold text-white"
+                      >
+                        <ReceiptText size={17} />
+                        Add Charges
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => openCashier(billingFocus)}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-pink-600 px-4 py-2.5 font-bold text-white"
+                      >
+                        <PhilippinePeso size={17} />
+                        Open Cashier
+                      </button>
+                    </div>
+                  </div>
 
-            <SummaryCard
-              title="Total collected"
-              value={formatCurrency(
-                summary.totalCollected,
-              )}
-              description="Payments received"
-              icon={Banknote}
-              iconClass="bg-emerald-100 text-emerald-600"
-            />
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <DetailBox label="Invoice" value={billingFocus.invoice_number || "—"} />
+                    <DetailBox label="Case ID" value={billingFocus.case_number || "Miscellaneous"} />
+                    <DetailBox label="Consultation Date" value={formatDate(billingFocus.consultation_date || billingFocus.invoice_date)} />
+                  </div>
 
-            <SummaryCard
-              title="Outstanding"
-              value={formatCurrency(
-                summary.outstanding,
-              )}
-              description="Remaining balance"
-              icon={Clock3}
-              iconClass="bg-amber-100 text-amber-600"
-            />
+                  <div className="mt-6 overflow-x-auto">
+                    <table className="w-full min-w-175 text-left">
+                      <thead><tr className="border-b text-xs uppercase text-slate-400">
+                        <th className="p-3">Charge Description</th>
+                        <th className="p-3">Category</th>
+                        <th className="p-3 text-right">Quantity</th>
+                        <th className="p-3 text-right">Unit Price</th>
+                        <th className="p-3 text-right">Discount</th>
+                        <th className="p-3 text-right">Final Amount</th>
+                      </tr></thead>
+                      <tbody>
+                        {billingFocus.items?.length ? billingFocus.items.map((item) => (
+                          <tr key={item.id} className="border-b border-slate-100">
+                            <td className="p-3 font-semibold">{item.description}</td>
+                            <td className="p-3 text-slate-500">{item.category}</td>
+                            <td className="p-3 text-right">{item.quantity}</td>
+                            <td className="p-3 text-right">{formatCurrency(item.unit_price)}</td>
+                            <td className="p-3 text-right">{formatCurrency(item.item_discount)}</td>
+                            <td className="p-3 text-right font-bold">{formatCurrency(item.final_amount)}</td>
+                          </tr>
+                        )) : (
+                          <tr><td colSpan="6" className="p-10 text-center text-slate-400">No itemized charges yet.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-            <SummaryCard
-              title="Paid invoices"
-              value={summary.paidInvoices}
-              description={`${rows.length} total billing records`}
-              icon={CheckCircle2}
-              iconClass="bg-blue-100 text-blue-600"
-            />
+                  <div className="mt-6 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-3">
+                    <AmountBox label="Grand Total" value={formatCurrency(billingFocus.grand_total || billingFocus.total_amount)} className="bg-slate-50 text-slate-900" />
+                    <AmountBox label="Amount Paid" value={formatCurrency(billingFocus.paid_amount)} className="bg-emerald-50 text-emerald-700" />
+                    <AmountBox label="Remaining Balance" value={formatCurrency(Math.max(0, Number(billingFocus.grand_total || billingFocus.total_amount || 0) - Number(billingFocus.paid_amount || 0)))} className="bg-amber-50 text-amber-700" />
+                  </div>
+                </>
+              ) : (
+                <div className="grid min-h-100 place-items-center text-center text-slate-400">
+                  <div><ReceiptText className="mx-auto mb-3" size={36} /><p>Select a pending bill to view patient details and charges.</p></div>
+                </div>
+              )}
+            </div>
+
+            <aside className="rounded-3xl bg-white p-4 shadow-sm">
+              <div className="border-b border-slate-100 px-2 pb-4">
+                <h2 className="text-lg font-bold">Pending Bills</h2>
+                <p className="text-sm text-slate-500">
+                  {pendingBills.length} waiting for payment
+                </p>
+                <label className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <Search size={16} className="text-slate-400" />
+                  <input
+                    value={pendingSearch}
+                    onChange={(event) => setPendingSearch(event.target.value)}
+                    placeholder="Search patient or bill"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                  />
+                </label>
+              </div>
+              <div className="mt-3 max-h-150 space-y-2 overflow-y-auto">
+                {pendingBills.map((invoice) => {
+                  const balance = Math.max(0, Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0));
+                  const active = Number(billingFocus?.id) === Number(invoice.id);
+                  return (
+                    <button key={invoice.id} type="button" onClick={() => focusBill(invoice)}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${active ? "border-pink-300 bg-pink-50" : "border-slate-100 hover:border-pink-200 hover:bg-slate-50"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><p className="truncate font-bold text-slate-800">{invoice.patient_name}</p><p className="mt-1 text-xs text-slate-400">{invoice.patient_number || invoice.invoice_number}</p></div>
+                        <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-600">{getStatus(invoice)}</span>
+                      </div>
+                      <div className="mt-3 flex justify-between text-sm"><span className="text-slate-400">{invoice.case_number || "Miscellaneous"}</span><strong className="text-amber-700">{formatCurrency(balance)}</strong></div>
+                    </button>
+                  );
+                })}
+                {!pendingBills.length && (
+                  <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-400">
+                    No pending bills found.
+                  </div>
+                )}
+              </div>
+            </aside>
           </section>
 
-          <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+          <section className="hidden">
             <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-50 text-pink-600">
@@ -980,8 +1076,8 @@ export default function Billing() {
                     All statuses
                   </option>
 
-                  <option value="Pending">
-                    Pending
+                  <option value="Unpaid">
+                    Unpaid
                   </option>
 
                   <option value="Partial">
@@ -1272,8 +1368,7 @@ export default function Billing() {
                     </h3>
 
                     <p className="text-sm text-slate-500">
-                      Set the final amount that
-                      the patient must pay.
+                      Total is calculated from itemized charges.
                     </p>
                   </div>
                 </div>
@@ -1298,32 +1393,103 @@ export default function Billing() {
                           event.target.value,
                         )
                       }
-                      disabled={
-                        getStatus(
-                          selectedInvoice,
-                        ) === "Paid"
-                      }
+                      disabled
                       placeholder="0.00"
                       className="w-full rounded-2xl border border-slate-200 py-3 pl-9 pr-4 text-lg font-bold outline-none focus:border-pink-400 focus:ring-4 focus:ring-pink-100 disabled:bg-slate-100"
                     />
                   </div>
                 </label>
 
-                {getStatus(
-                  selectedInvoice,
-                ) !== "Paid" && (
-                  <button
-                    type="button"
-                    onClick={saveBillOnly}
-                    disabled={submitting}
-                    className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl border border-pink-200 bg-pink-50 px-5 py-3 text-sm font-bold text-pink-700 transition hover:bg-pink-100 disabled:opacity-60"
-                  >
-                    <Edit3 size={17} />
-
-                    Save billing amount
-                  </button>
-                )}
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full min-w-150 text-left text-sm">
+                    <thead><tr className="border-b text-xs uppercase text-slate-400">
+                      <th className="py-2">Description</th><th>Category</th>
+                      <th className="text-right">Qty</th><th className="text-right">Unit</th>
+                      <th className="text-right">Discount</th><th className="text-right">Final</th>
+                    </tr></thead>
+                    <tbody>
+                      {selectedInvoice.items?.length ? selectedInvoice.items.map((item) => (
+                        <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3 font-semibold">{item.description}</td>
+                          <td>{item.category}</td>
+                          <td className="text-right">{item.quantity}</td>
+                          <td className="text-right">{formatCurrency(item.unit_price)}</td>
+                          <td className="text-right">{formatCurrency(item.item_discount)}</td>
+                          <td className="text-right font-bold">{formatCurrency(item.final_amount)}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan="6" className="py-6 text-center text-slate-400">No itemized charges recorded yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </section>
+
+              {currentBalance > 0 && (
+                <section className="rounded-3xl border border-violet-200 bg-violet-50/40 p-5">
+                  <div>
+                    <h3 className="font-bold text-slate-900">Apply Discount</h3>
+                    <p className="text-sm text-slate-500">
+                      Discounts are recorded as audited billing deductions.
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <label className="text-sm font-semibold text-slate-700">
+                      Discount Type
+                      <select
+                        value={discountType}
+                        onChange={(event) => setDiscountType(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-normal"
+                      >
+                        <option value="Percentage">Percentage (%)</option>
+                        <option value="Fixed Amount">Fixed Amount</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-semibold text-slate-700">
+                      {discountType === "Percentage" ? "Percentage" : "Discount Amount"}
+                      <input
+                        type="number"
+                        min="0"
+                        max={discountType === "Percentage" ? "100" : currentBalance}
+                        step="0.01"
+                        value={discountValue}
+                        onChange={(event) => setDiscountValue(event.target.value)}
+                        placeholder={discountType === "Percentage" ? "10" : "0.00"}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+                    <label className="text-sm font-semibold text-slate-700">
+                      Reason
+                      <input
+                        value={discountReason}
+                        onChange={(event) => setDiscountReason(event.target.value)}
+                        placeholder="Senior, PWD, courtesy..."
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 font-normal"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    <p className="text-sm text-violet-700">
+                      Discount preview:{" "}
+                      <strong>
+                        {formatCurrency(
+                          discountType === "Percentage"
+                            ? enteredTotal * (Number(discountValue) || 0) / 100
+                            : Number(discountValue) || 0,
+                        )}
+                      </strong>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={applyDiscount}
+                      disabled={submitting}
+                      className="rounded-xl bg-violet-600 px-4 py-2.5 font-bold text-white disabled:opacity-50"
+                    >
+                      Apply Discount
+                    </button>
+                  </div>
+                </section>
+              )}
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <AmountBox
@@ -1531,6 +1697,10 @@ export default function Billing() {
               )}
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={printStatement}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-pink-600 px-5 py-3 font-semibold text-white">
+                  <Printer size={18} /> Print Statement
+                </button>
                 <button
                   type="button"
                   onClick={closeCashier}
@@ -1556,40 +1726,6 @@ export default function Billing() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  value,
-  description,
-  icon: Icon,
-  iconClass,
-}) {
-  return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-500">
-            {title}
-          </p>
-
-          <p className="mt-2 text-2xl font-bold text-slate-900">
-            {value}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-400">
-            {description}
-          </p>
-        </div>
-
-        <div
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${iconClass}`}
-        >
-          <Icon size={21} />
-        </div>
-      </div>
     </div>
   );
 }

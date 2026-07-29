@@ -20,6 +20,17 @@ import { api } from "../api/client";
 
 const now = () => new Date().toISOString().slice(0, 16);
 const today = () => new Date().toISOString().slice(0, 10);
+const CONSULTATION_DRAFT_KEY = "obgyn_consultation_draft";
+
+const readConsultationDraft = () => {
+  try {
+    return JSON.parse(
+      localStorage.getItem(CONSULTATION_DRAFT_KEY) || "null",
+    );
+  } catch {
+    return null;
+  }
+};
 
 const toDateInput = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
@@ -120,19 +131,6 @@ const createInitialForm = (patientId = "") => ({
   next_prenatal_visit: "",
 });
 
-const services = [
-  "General Consultation",
-  "Prenatal Checkup",
-  "Postnatal Checkup",
-  "Gynecological Consultation",
-  "Family Planning",
-  "Ultrasound",
-  "Pap Smear",
-  "Follow-up Consultation",
-  "Laboratory Review",
-  "Other",
-];
-
 const blankMedicine = {
   medicine_name: "",
   dosage: "",
@@ -212,8 +210,10 @@ export default function Consultations() {
 
   const appointmentIdFromUrl =
     searchParams.get("appointment") || "";
+  const savedDraft = readConsultationDraft();
 
   const [patients, setPatients] = useState([]);
+  const [serviceTypes, setServiceTypes] = useState([]);
   const [patientSearch, setPatientSearch] =
     useState("");
 
@@ -225,22 +225,27 @@ export default function Consultations() {
   const [appointment, setAppointment] =
     useState(null);
 
-  const [form, setForm] = useState(() =>
-    createInitialForm(patientIdFromUrl),
-  );
+  const [form, setForm] = useState(() => ({
+    ...createInitialForm(patientIdFromUrl),
+    ...(savedDraft?.form || {}),
+    patient_id:
+      patientIdFromUrl ||
+      savedDraft?.form?.patient_id ||
+      "",
+  }));
 
   const isPrenatal =
     form.service_type === "Prenatal Checkup";
 
   const [prescription, setPrescription] =
-    useState({
+    useState(savedDraft?.prescription || {
       issued_date: today(),
       diagnosis: "",
       notes: "",
       items: [{ ...blankMedicine }],
     });
 
-  const [laboratory, setLaboratory] = useState({
+  const [laboratory, setLaboratory] = useState(savedDraft?.laboratory || {
     requested_date: today(),
     indication: "",
     notes: "",
@@ -263,12 +268,26 @@ export default function Consultations() {
   })();
 
   useEffect(() => {
+    localStorage.setItem(
+      CONSULTATION_DRAFT_KEY,
+      JSON.stringify({
+        form,
+        prescription,
+        laboratory,
+      }),
+    );
+  }, [form, prescription, laboratory]);
+
+  useEffect(() => {
     const loadPage = async () => {
       setLoading(true);
       setResult("");
 
       try {
-        const requests = [api("/patients")];
+        const requests = [
+          api("/patients"),
+          api("/service-types"),
+        ];
 
         if (appointmentIdFromUrl) {
           requests.push(
@@ -278,14 +297,19 @@ export default function Consultations() {
           );
         }
 
-        const [
-          patientRecords,
-          appointmentRecord,
-        ] = await Promise.all(requests);
+        const responses = await Promise.all(requests);
+        const patientRecords = responses[0];
+        const serviceRecords = responses[1];
+        const appointmentRecord = responses[2];
 
         setPatients(
           Array.isArray(patientRecords)
             ? patientRecords
+            : [],
+        );
+        setServiceTypes(
+          Array.isArray(serviceRecords)
+            ? serviceRecords
             : [],
         );
 
@@ -641,6 +665,7 @@ export default function Consultations() {
 
       const body = {
         ...form,
+        service_fee: undefined,
 
         patient_id: Number(
           form.patient_id,
@@ -926,6 +951,10 @@ export default function Consultations() {
               )}`
             : ""
         }.`,
+      );
+
+      localStorage.removeItem(
+        CONSULTATION_DRAFT_KEY,
       );
 
       setTimeout(() => {
@@ -1286,9 +1315,14 @@ export default function Consultations() {
 
   <select
     value={form.service_type}
-    onChange={set("service_type")}
+    onChange={(event) => {
+      setForm((current) => ({
+        ...current,
+        service_type: event.target.value,
+      }));
+    }}
     disabled={Boolean(appointmentIdFromUrl)}
-    className={`mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none transition ${
+    className={`mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-semibold outline-none transition ${
       appointmentIdFromUrl
         ? "cursor-not-allowed bg-slate-100 text-slate-700"
         : "focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
@@ -1296,12 +1330,18 @@ export default function Consultations() {
   >
     <option value="">Select service</option>
 
-    {services.map((service) => (
-      <option key={service} value={service}>
-        {service}
-      </option>
-    ))}
+   {serviceTypes.map((service) => (
+  <option key={service.id} value={service.name}>
+    {service.name}
+  </option>
+))}
   </select>
+
+  {!serviceTypes.length && (
+    <span className="mt-1 block text-xs text-amber-600">
+      Add an active service in Tools before creating a consultation.
+    </span>
+  )}
 
   {appointmentIdFromUrl && (
     <span className="mt-1 block text-xs text-teal-600">
@@ -2030,6 +2070,11 @@ export default function Consultations() {
             <div className="flex flex-wrap justify-end gap-3">
               <Link
                 to="/appointments"
+                onClick={() =>
+                  localStorage.removeItem(
+                    CONSULTATION_DRAFT_KEY,
+                  )
+                }
                 className="rounded-xl px-5 py-3 font-medium text-slate-600 hover:bg-slate-100"
               >
                 Cancel

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Boxes, ReceiptText, Wrench } from "lucide-react";
 import Logo from "../assets/OBLOGO.png";
 
 const menuItems = [
@@ -31,6 +32,21 @@ const menuItems = [
     icon: "↻",
     path: "/backups",
     roles: ["doctor"],
+  },
+  {
+    name: "Tools",
+    icon: <Wrench size={18} />,
+    path: "/tools",
+  },
+  {
+    name: "Inventory",
+    icon: <Boxes size={18} />,
+    path: "/inventory",
+  },
+  {
+    name: "Patient Charges",
+    icon: <ReceiptText size={18} />,
+    path: "/patient-charges",
   },
 ];
 
@@ -76,6 +92,7 @@ function Sidebar({ activeItem = "Dashboard" }) {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("obgyn_token");
     localStorage.removeItem("currentUser");
 
     navigate("/login", {

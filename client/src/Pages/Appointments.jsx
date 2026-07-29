@@ -24,19 +24,6 @@ const blankForm = {
   status: "Scheduled",
 };
 
-const services = [
-  "General Consultation",
-  "Prenatal Checkup",
-  "Postnatal Checkup",
-  "Gynecological Consultation",
-  "Family Planning",
-  "Ultrasound",
-  "Pap Smear",
-  "Follow-up Consultation",
-  "Laboratory Review",
-  "Other",
-];
-
 const statuses = [
   "Scheduled",
   "Confirmed",
@@ -121,6 +108,8 @@ export default function Appointments() {
 
   const [appointments, setAppointments] =
     useState([]);
+  const [serviceTypes, setServiceTypes] =
+    useState([]);
 
   const [patients, setPatients] =
     useState([]);
@@ -176,6 +165,11 @@ export default function Appointments() {
     Promise.all([
       loadAppointments(),
       loadPatients(),
+      api("/service-types").then((records) =>
+        setServiceTypes(
+          Array.isArray(records) ? records : [],
+        ),
+      ),
     ]);
   }, []);
 
@@ -869,13 +863,22 @@ export default function Appointments() {
                     Select service
                   </option>
 
-                  {services.map(
+                  {serviceTypes.map(
                     (service) => (
                       <option
-                        key={service}
-                        value={service}
+                        key={service.id}
+                        value={service.name}
                       >
-                        {service}
+                        {service.name} —{" "}
+                        {new Intl.NumberFormat(
+                          "en-PH",
+                          {
+                            style: "currency",
+                            currency: "PHP",
+                          },
+                        ).format(
+                          service.default_fee || 0,
+                        )}
                       </option>
                     ),
                   )}

@@ -12,6 +12,8 @@ import {
   Stethoscope,
   UserPlus,
   Users,
+  Boxes,
+  PackageX,
 } from "lucide-react";
 
 import Sidebar from "../components/Sidebar";
@@ -115,6 +117,22 @@ export default function Dashboard() {
         iconClass: "bg-amber-100 text-amber-700",
         accentClass:
           "from-amber-500 to-orange-400",
+      },
+      {
+        label: "Inventory Items",
+        value: Number(data.inventory?.total_items || 0),
+        description: `${Number(data.inventory?.low_stock || 0)} low-stock items`,
+        icon: Boxes,
+        iconClass: "bg-cyan-100 text-cyan-700",
+        accentClass: "from-cyan-600 to-blue-500",
+      },
+      {
+        label: "Out of Stock",
+        value: Number(data.inventory?.out_of_stock || 0),
+        description: `${Number(data.inventory?.near_expiration || 0)} items near expiration`,
+        icon: PackageX,
+        iconClass: "bg-red-100 text-red-700",
+        accentClass: "from-red-600 to-orange-500",
       },
     ];
   }, [data]);

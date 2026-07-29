@@ -42,6 +42,7 @@ export default function Prescriptions() {
   const [cases, setCases] = useState([]);
   const [records, setRecords] = useState([]);
   const [labs, setLabs] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [tab, setTab] = useState("rx");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -49,16 +50,20 @@ export default function Prescriptions() {
 
   const load = async () => {
     try {
-      const [patientsData, prescriptions, laboratories] =
+      const [patientsData, prescriptions, laboratories, inventory] =
         await Promise.all([
           api("/patients"),
           api("/prescriptions"),
           api("/laboratory-requests"),
+          api("/inventory/overview"),
         ]);
 
       setPatients(Array.isArray(patientsData) ? patientsData : []);
       setRecords(Array.isArray(prescriptions) ? prescriptions : []);
       setLabs(Array.isArray(laboratories) ? laboratories : []);
+      setInventoryItems(
+        Array.isArray(inventory?.items) ? inventory.items : [],
+      );
     } catch (error) {
       setMessage(error.message);
     }
@@ -287,6 +292,59 @@ export default function Prescriptions() {
     tab === "rx"
       ? printPrescription(record)
       : printLaboratoryRequest(record);
+
+  const dispense = async (record) => {
+    const requests = [];
+
+    for (const prescribed of record.items || []) {
+      const inventory = inventoryItems.find(
+        (item) =>
+          item.category === "Medicines" &&
+          item.item_name.toLowerCase() ===
+            prescribed.medicine_name.toLowerCase(),
+      );
+
+      if (!inventory) {
+        setMessage(
+          `No active medicine inventory item exactly matches "${prescribed.medicine_name}".`,
+        );
+        return;
+      }
+
+      const quantity = Number(
+        window.prompt(
+          `Quantity actually dispensed for ${prescribed.medicine_name} (${inventory.current_stock} available):`,
+          "1",
+        ),
+      );
+
+      if (!Number.isInteger(quantity) || quantity < 1) return;
+      requests.push({ prescribed, inventory, quantity });
+    }
+
+    if (!requests.length ||
+      !window.confirm("Confirm dispensing? Inventory stock will be permanently deducted.")) return;
+
+    try {
+      for (const request of requests) {
+        await api(`/prescriptions/${record.id}/dispense`, {
+          method: "POST",
+          body: JSON.stringify({
+            prescription_item_id: request.prescribed.id,
+            inventory_item_id: request.inventory.id,
+            quantity: request.quantity,
+            performed_by:
+              JSON.parse(localStorage.getItem("currentUser") || "{}").fullname ||
+              "Clinic user",
+          }),
+        });
+      }
+      setMessage("Prescription confirmed as dispensed and inventory updated.");
+      await load();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -660,6 +718,17 @@ export default function Prescriptions() {
                             <Printer size={15} />
                             Print
                           </button>
+
+                          {tab === "rx" && (
+                            <button
+                              type="button"
+                              onClick={() => dispense(record)}
+                              className="ml-2 inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+                            >
+                              <Pill size={15} />
+                              Dispense
+                            </button>
+                          )}
 
                           <button
                             type="button"

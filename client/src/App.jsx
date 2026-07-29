@@ -14,6 +14,9 @@ import Billing from "./Pages/Billing";
 import Reports from "./Pages/Reports";
 import BackupRestore from "./Pages/BackupRestore";
 import ClinicModule from "./Pages/ClinicModule";
+import Tools from "./Pages/Tools";
+import Inventory from "./Pages/Inventory";
+import PatientCharges from "./Pages/PatientCharges";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 
 function App() {
@@ -86,10 +89,10 @@ function App() {
             }
           />
 
-          <Route
-            path="/settings"
-            element={<ClinicModule moduleName="Settings" />}
-          />
+          <Route path="/tools" element={<Tools />} />
+          <Route path="/inventory" element={<Inventory />} />
+          <Route path="/patient-charges" element={<PatientCharges />} />
+          <Route path="/settings" element={<Tools />} />
         </Routes>
       </AppErrorBoundary>
     </BrowserRouter>

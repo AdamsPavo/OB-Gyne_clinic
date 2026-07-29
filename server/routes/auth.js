@@ -411,4 +411,47 @@ router.post(
   }
 );
 
+router.get("/profile", authenticate, (req, res) => {
+  const user = db.prepare(
+    "SELECT id, fullname, username, role, created_at FROM users WHERE id = ?"
+  ).get(req.user.id);
+  if (!user) return res.status(404).json({ message: "User account not found." });
+  res.json(user);
+});
+
+router.put("/profile", authenticate, (req, res) => {
+  const fullname = req.body.fullname?.trim();
+  const username = req.body.username?.trim();
+  if (!fullname || !username) {
+    return res.status(400).json({ message: "Full name and username are required." });
+  }
+  const duplicate = db.prepare(
+    "SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id <> ?"
+  ).get(username, req.user.id);
+  if (duplicate) return res.status(409).json({ message: "Username already exists." });
+  db.prepare("UPDATE users SET fullname = ?, username = ? WHERE id = ?")
+    .run(fullname, username, req.user.id);
+  const user = db.prepare(
+    "SELECT id, fullname, username, role FROM users WHERE id = ?"
+  ).get(req.user.id);
+  res.json({ message: "Profile updated successfully.", user });
+});
+
+router.put("/password", authenticate, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: "Current and new passwords are required." });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: "New password must contain at least 8 characters." });
+  }
+  const user = db.prepare("SELECT password FROM users WHERE id = ?").get(req.user.id);
+  if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+    return res.status(400).json({ message: "Current password is incorrect." });
+  }
+  const password = await bcrypt.hash(newPassword, 12);
+  db.prepare("UPDATE users SET password = ? WHERE id = ?").run(password, req.user.id);
+  res.json({ message: "Password changed successfully." });
+});
+
 module.exports = router;

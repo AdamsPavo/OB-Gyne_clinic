@@ -39,6 +39,148 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS service_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    default_fee REAL NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS charge_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    category TEXT NOT NULL DEFAULT 'Miscellaneous',
+    description TEXT,
+    default_amount REAL NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS patient_charges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    charge_number TEXT UNIQUE NOT NULL,
+    patient_id INTEGER NOT NULL,
+    charge_type_id INTEGER NOT NULL,
+    consultation_case_id INTEGER,
+    invoice_id INTEGER NOT NULL,
+    description TEXT,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_amount REAL NOT NULL,
+    total_amount REAL NOT NULL,
+    charge_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Billed',
+    created_by TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id),
+    FOREIGN KEY (charge_type_id) REFERENCES charge_types(id),
+    FOREIGN KEY (consultation_case_id) REFERENCES consultation_cases(id),
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS medicine_inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    medicine_name TEXT NOT NULL,
+    generic_name TEXT,
+    unit TEXT NOT NULL DEFAULT 'piece',
+    quantity INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 10,
+    unit_price REAL NOT NULL DEFAULT 0,
+    expiry_date TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_code TEXT UNIQUE NOT NULL,
+    item_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    brand TEXT,
+    description TEXT,
+    unit_of_measurement TEXT NOT NULL,
+    supplier TEXT,
+    current_stock INTEGER NOT NULL DEFAULT 0 CHECK (current_stock >= 0),
+    minimum_stock_level INTEGER NOT NULL DEFAULT 0,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    storage_location TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inventory_item_id INTEGER NOT NULL,
+    batch_number TEXT,
+    expiration_date TEXT,
+    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    unit_cost REAL NOT NULL DEFAULT 0,
+    supplier TEXT,
+    received_date TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_number TEXT UNIQUE NOT NULL,
+    inventory_item_id INTEGER NOT NULL,
+    inventory_batch_id INTEGER,
+    transaction_type TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    previous_stock INTEGER NOT NULL,
+    new_stock INTEGER NOT NULL,
+    batch_number TEXT,
+    expiration_date TEXT,
+    supplier TEXT,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    patient_id INTEGER,
+    consultation_case_id INTEGER,
+    prescription_id INTEGER,
+    reason TEXT,
+    department TEXT,
+    requested_by TEXT,
+    performed_by TEXT,
+    reference_number TEXT,
+    transaction_date TEXT NOT NULL,
+    remarks TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id),
+    FOREIGN KEY (inventory_batch_id) REFERENCES inventory_batches(id),
+    FOREIGN KEY (patient_id) REFERENCES patients(id),
+    FOREIGN KEY (consultation_case_id) REFERENCES consultation_cases(id),
+    FOREIGN KEY (prescription_id) REFERENCES prescriptions(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS prescription_dispensing (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prescription_id INTEGER NOT NULL,
+    prescription_item_id INTEGER NOT NULL,
+    inventory_item_id INTEGER NOT NULL,
+    quantity_dispensed INTEGER NOT NULL,
+    dispensed_by TEXT,
+    dispensed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (prescription_id) REFERENCES prescriptions(id),
+    FOREIGN KEY (prescription_item_id) REFERENCES prescription_items(id),
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS inventory_activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    inventory_item_id INTEGER,
+    performed_by TEXT,
+    details TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id)
+  );
+
   CREATE TABLE IF NOT EXISTS patients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     patient_number TEXT UNIQUE NOT NULL,
@@ -339,6 +481,42 @@ db.exec(`
       ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS invoice_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    patient_id INTEGER NOT NULL,
+    consultation_case_id INTEGER,
+    source_type TEXT NOT NULL,
+    source_id INTEGER,
+    category TEXT NOT NULL,
+    description TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    unit_price_cents INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0),
+    subtotal_cents INTEGER NOT NULL DEFAULT 0,
+    discount_cents INTEGER NOT NULL DEFAULT 0 CHECK (discount_cents >= 0),
+    final_amount_cents INTEGER NOT NULL DEFAULT 0,
+    remarks TEXT,
+    is_void INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+    FOREIGN KEY (patient_id) REFERENCES patients(id),
+    FOREIGN KEY (consultation_case_id) REFERENCES consultation_cases(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    invoice_item_id INTEGER,
+    adjustment_type TEXT NOT NULL CHECK (adjustment_type IN ('Addition','Deduction')),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    reason TEXT NOT NULL,
+    created_by TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+    FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id)
+  );
+
   CREATE TABLE IF NOT EXISTS report_exports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     report_name TEXT NOT NULL,
@@ -573,10 +751,27 @@ for (const column of laboratoryRequestItemColumns) {
 
 const invoiceColumns = [
   "consultation_case_id INTEGER REFERENCES consultation_cases(id) ON DELETE SET NULL",
+  "appointment_id INTEGER REFERENCES appointments(id) ON DELETE SET NULL",
+  "total_discount REAL NOT NULL DEFAULT 0",
+  "grand_total REAL NOT NULL DEFAULT 0",
+  "remaining_balance REAL NOT NULL DEFAULT 0",
+  "billing_status TEXT NOT NULL DEFAULT 'Draft'",
+  "created_by TEXT",
+  "updated_at DATETIME",
 ];
 
 for (const column of invoiceColumns) {
   addColumnIfMissing("invoices", column);
+}
+
+const paymentColumns = [
+  "patient_id INTEGER REFERENCES patients(id) ON DELETE SET NULL",
+  "receipt_number TEXT",
+  "received_by TEXT",
+  "remarks TEXT",
+];
+for (const column of paymentColumns) {
+  addColumnIfMissing("payments", column);
 }
 
 /*
@@ -610,6 +805,40 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_invoices_case
     ON invoices(consultation_case_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uk_active_invoice_case
+    ON invoices(consultation_case_id)
+    WHERE consultation_case_id IS NOT NULL AND payment_status <> 'Cancelled';
+  CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice
+    ON invoice_items(invoice_id, is_void);
+  CREATE UNIQUE INDEX IF NOT EXISTS uk_invoice_item_source
+    ON invoice_items(invoice_id, source_type, source_id)
+    WHERE source_id IS NOT NULL AND is_void = 0;
+  CREATE INDEX IF NOT EXISTS idx_billing_adjustments_invoice
+    ON billing_adjustments(invoice_id);
+
+  CREATE INDEX IF NOT EXISTS idx_service_types_active
+    ON service_types(is_active, name);
+  CREATE INDEX IF NOT EXISTS idx_charge_types_active
+    ON charge_types(is_active, name);
+  CREATE INDEX IF NOT EXISTS idx_patient_charges_patient
+    ON patient_charges(patient_id, charge_date);
+  CREATE INDEX IF NOT EXISTS idx_patient_charges_invoice
+    ON patient_charges(invoice_id);
+
+  CREATE INDEX IF NOT EXISTS idx_medicine_inventory_name
+    ON medicine_inventory(medicine_name);
+
+  CREATE INDEX IF NOT EXISTS idx_medicine_inventory_expiry
+    ON medicine_inventory(expiry_date);
+
+  CREATE INDEX IF NOT EXISTS idx_inventory_items_category
+    ON inventory_items(category, is_archived);
+  CREATE INDEX IF NOT EXISTS idx_inventory_batches_fefo
+    ON inventory_batches(inventory_item_id, expiration_date, quantity);
+  CREATE INDEX IF NOT EXISTS idx_inventory_transactions_date
+    ON inventory_transactions(transaction_date, transaction_type);
+  CREATE INDEX IF NOT EXISTS idx_inventory_transactions_item
+    ON inventory_transactions(inventory_item_id);
 `);
 
 module.exports = db;

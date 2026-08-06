@@ -687,6 +687,12 @@ export const printCase = (record) =>
 
       <h2>Clinical details</h2>
 
+      <p class="note">
+        Type of Service: <b>${esc(record.service_name || record.service_type)}</b>
+        &nbsp; · &nbsp;
+        Service Fee: <b>${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(record.service_price) || 0)}</b>
+      </p>
+
       <div class="details">
         <div class="note">
           <b>Chief complaint</b>

@@ -3,7 +3,7 @@ import { Building2, KeyRound, PackagePlus, Pencil, Pill, Plus, ReceiptText, Save
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 
-const emptyService = { name: "", description: "", default_fee: "", is_active: true };
+const emptyService = { name: "", default_fee: "", is_active: true };
 const emptyMedicine = { medicine_name: "", generic_name: "", unit: "piece", quantity: "", reorder_level: "10", unit_price: "", expiry_date: "", notes: "" };
 const peso = new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" });
 
@@ -26,7 +26,7 @@ export default function Tools() {
   useEffect(() => { load(); }, []);
   const show = (text, type = "success") => setNotice({ text, type });
   const tabs = [
-    ["services", "Service Types", Stethoscope], ["inventory", "Medicine Inventory", Pill],
+    ["services", "Service Management", Stethoscope], ["inventory", "Medicine Inventory", Pill],
     ["charges", "Charge Types", ReceiptText],
     ["clinic", "Clinic Details", Building2], ["account", "Profile & Security", UserRound],
   ];
@@ -69,10 +69,10 @@ function IconButton({ icon: Icon, danger, onClick, label }) { return <button typ
 function Services({ items, reload, show }) {
   const [form, setForm] = useState(emptyService), [editing, setEditing] = useState(null), [open, setOpen] = useState(false);
   const close = () => { setForm(emptyService); setEditing(null); setOpen(false); };
-  const save = async (e) => { e.preventDefault(); try { const r = await api(editing ? `/tools/services/${editing}` : "/tools/services", { method: editing ? "PUT" : "POST", body: JSON.stringify(form) }); show(r.message); close(); await reload(); } catch (error) { show(error.message, "error"); } };
-  const remove = async (item) => { if (!confirm(`Delete "${item.name}"?`)) return; try { await api(`/tools/services/${item.id}`, { method: "DELETE" }); show("Service deleted."); await reload(); } catch (e) { show(e.message, "error"); } };
-  return <Panel icon={Stethoscope} title="Service Types" description={`${items.length} configured services`} action={<button onClick={() => setOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-2.5 font-semibold text-white"><Plus size={18} />Add service</button>}>
-    {open && <form onSubmit={save} className="mt-6 grid gap-4 rounded-2xl bg-fuchsia-50/60 p-4 md:grid-cols-2"><Field label="Service name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /><Field label="Default fee" type="number" min="0" step=".01" value={form.default_fee} onChange={e => setForm({ ...form, default_fee: e.target.value })} /><div className="md:col-span-2"><Field label="Description" value={form.description || ""} onChange={e => setForm({ ...form, description: e.target.value })} /></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.is_active)} onChange={e => setForm({ ...form, is_active: e.target.checked })} />Available for use</label><Actions editing={editing} close={close} /></form>}
+  const save = async (e) => { e.preventDefault(); try { const r = await api(editing ? `/services/${editing}` : "/services", { method: editing ? "PUT" : "POST", body: JSON.stringify(form) }); show(r.message); close(); await reload(); } catch (error) { show(error.message, "error"); } };
+  const remove = async (item) => { if (!confirm(`Delete "${item.name}"?`)) return; try { await api(`/services/${item.id}`, { method: "DELETE" }); show("Service deleted."); await reload(); } catch (e) { show(e.message, "error"); } };
+  return <Panel icon={Stethoscope} title="Service Management" description={`${items.length} configured services`} action={<button onClick={() => setOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-2.5 font-semibold text-white"><Plus size={18} />Add service</button>}>
+    {open && <form onSubmit={save} className="mt-6 grid gap-4 rounded-2xl bg-fuchsia-50/60 p-4 md:grid-cols-2"><Field label="Service name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /><Field label="Price" type="number" min="0" step=".01" value={form.default_fee} onChange={e => setForm({ ...form, default_fee: e.target.value })} required /><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.is_active)} onChange={e => setForm({ ...form, is_active: e.target.checked })} />Active</label><Actions editing={editing} close={close} /></form>}
     <div className="mt-6 overflow-x-auto"><table className="w-full min-w-150 text-left"><thead><tr className="border-b text-xs uppercase text-slate-400"><th className="p-3">Service</th><th className="p-3">Fee</th><th className="p-3">Status</th><th /></tr></thead><tbody>{items.length ? items.map(i => <tr key={i.id} className="border-b border-slate-100"><td className="p-3"><b>{i.name}</b><p className="text-xs text-slate-400">{i.description || "No description"}</p></td><td className="p-3">{peso.format(i.default_fee || 0)}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${i.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{i.is_active ? "Active" : "Inactive"}</span></td><td><div className="flex justify-end gap-2"><IconButton label="Edit" icon={Pencil} onClick={() => { setEditing(i.id); setForm(i); setOpen(true); }} /><IconButton label="Delete" icon={Trash2} danger onClick={() => remove(i)} /></div></td></tr>) : <Empty span="4" text="No service types yet." />}</tbody></table></div>
   </Panel>;
 }

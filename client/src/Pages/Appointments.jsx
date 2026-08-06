@@ -20,6 +20,7 @@ import { api } from "../api/client";
 const blankForm = {
   patient_id: "",
   service: "",
+  service_id: "",
   appointment_date: "",
   status: "Scheduled",
 };
@@ -165,7 +166,7 @@ export default function Appointments() {
     Promise.all([
       loadAppointments(),
       loadPatients(),
-      api("/service-types").then((records) =>
+      api("/services/active").then((records) =>
         setServiceTypes(
           Array.isArray(records) ? records : [],
         ),
@@ -349,7 +350,7 @@ export default function Appointments() {
         patient_id: Number(
           form.patient_id,
         ),
-        service: form.service,
+        service_id: Number(form.service_id),
         appointment_date:
           form.appointment_date,
         status: form.status,
@@ -397,6 +398,7 @@ export default function Appointments() {
 
       service:
         appointment.service || "",
+      service_id: String(appointment.service_id || ""),
 
       appointment_date:
         appointment.appointment_date
@@ -851,11 +853,12 @@ export default function Appointments() {
                 Service
 
                 <select
-                  name="service"
-                  value={form.service}
-                  onChange={
-                    handleChange
-                  }
+                  name="service_id"
+                  value={form.service_id}
+                  onChange={(event) => {
+                    const selected = serviceTypes.find((service) => String(service.id) === event.target.value);
+                    setForm((current) => ({ ...current, service_id: event.target.value, service: selected?.service_name || "" }));
+                  }}
                   required
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5"
                 >
@@ -867,7 +870,7 @@ export default function Appointments() {
                     (service) => (
                       <option
                         key={service.id}
-                        value={service.name}
+                        value={service.id}
                       >
                         {service.name} —{" "}
                         {new Intl.NumberFormat(

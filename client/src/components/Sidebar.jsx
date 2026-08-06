@@ -1,217 +1,39 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Boxes, ReceiptText, Wrench } from "lucide-react";
+import { CalendarDays, ClipboardPlus, CreditCard, DatabaseBackup, FileBarChart, HeartPulse, LayoutDashboard, LogOut, Menu, Package, Pill, ReceiptText, Settings2, UserCog, Users, X } from "lucide-react";
 import Logo from "../assets/OBLOGO.png";
 
-const menuItems = [
-  { name: "Dashboard", icon: "⌂", path: "/dashboard" },
-  { name: "Patients", icon: "♁", path: "/patients" },
-  { name: "Appointments", icon: "◷", path: "/appointments" },
-  {
-    name: "Consultations",
-    icon: "+",
-    path: "/consultations",
-    roles: ["doctor"],
-  },
-  {
-    name: "Prenatal Records",
-    icon: "♥",
-    path: "/prenatal-records",
-    roles: ["doctor"],
-  },
-  {
-    name: "Prescriptions",
-    icon: "◉",
-    path: "/prescriptions",
-    roles: ["doctor"],
-  },
-  { name: "Billing", icon: "□", path: "/billing" },
-  { name: "Reports", icon: "▥", path: "/reports" },
-  {
-    name: "Backup / Restore",
-    icon: "↻",
-    path: "/backups",
-    roles: ["doctor"],
-  },
-  {
-    name: "Tools",
-    icon: <Wrench size={18} />,
-    path: "/tools",
-  },
-  {
-    name: "Inventory",
-    icon: <Boxes size={18} />,
-    path: "/inventory",
-  },
-  {
-    name: "Patient Charges",
-    icon: <ReceiptText size={18} />,
-    path: "/patient-charges",
-  },
+const menuItems=[
+ {name:"Dashboard",icon:<LayoutDashboard size={19}/>,path:"/dashboard"},
+ {name:"Patients",icon:<Users size={19}/>,path:"/patients"},
+ {name:"Appointments",icon:<CalendarDays size={19}/>,path:"/appointments"},
+ {name:"Consultations",icon:<ClipboardPlus size={19}/>,path:"/consultations",roles:["admin","doctor"]},
+ {name:"Prenatal Records",icon:<HeartPulse size={19}/>,path:"/prenatal-records",roles:["admin","doctor"]},
+ {name:"Prescriptions",icon:<Pill size={19}/>,path:"/prescriptions",roles:["admin","doctor"]},
+ {name:"Billing",icon:<CreditCard size={19}/>,path:"/billing"},
+ {name:"Reports",icon:<FileBarChart size={19}/>,path:"/reports"},
+ {name:"Backup / Restore",icon:<DatabaseBackup size={19}/>,path:"/backup-restore",roles:["admin","doctor"]},
+ {name:"Tools",icon:<Settings2 size={19}/>,path:"/tools",roles:["admin","doctor"]},
+ {name:"Inventory",icon:<Package size={19}/>,path:"/inventory"},
+ {name:"Patient Charges",icon:<ReceiptText size={19}/>,path:"/patient-charges"},
+ {name:"User Management",icon:<UserCog size={19}/>,path:"/users",roles:["admin","doctor"]},
 ];
+const storedUser=()=>{try{return JSON.parse(localStorage.getItem("currentUser"))}catch{return null}};
+const initials=(name="")=>name.trim().split(/\s+/).filter(Boolean).slice(0,2).map(part=>part[0]?.toUpperCase()).join("")||"US";
 
-function getStoredUser() {
-  try {
-    const storedUser = localStorage.getItem("currentUser");
-
-    return storedUser ? JSON.parse(storedUser) : null;
-  } catch (error) {
-    console.error("Unable to read current user:", error);
-    return null;
-  }
+export default function Sidebar({activeItem="Dashboard"}){
+ const navigate=useNavigate(),[mobileOpen,setMobileOpen]=useState(false),[user]=useState(storedUser);
+ const items=menuItems.filter(item=>!item.roles||item.roles.includes(user?.role));
+ const fullname=user?.fullname||user?.full_name||"Logged-in User";
+ const role=user?.role==="admin"?"Administrator":user?.role==="doctor"?"Doctor":"Clinic Staff";
+ const logout=()=>{localStorage.removeItem("token");localStorage.removeItem("obgyn_token");localStorage.removeItem("currentUser");navigate("/",{replace:true})};
+ return <>
+  <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/95 px-4 shadow-sm backdrop-blur lg:hidden"><div className="flex items-center gap-3"><img src={Logo} alt="OB-GYN Clinic" className="h-10 w-10 rounded-xl bg-pink-50 p-1"/><div><p className="font-bold text-slate-900">OB-GYN Clinic</p><p className="text-xs text-slate-500">{activeItem}</p></div></div><button type="button" aria-label="Open navigation" onClick={()=>setMobileOpen(true)} className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-700"><Menu size={22}/></button></header>
+  {mobileOpen&&<button type="button" aria-label="Close navigation" onClick={()=>setMobileOpen(false)} className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm lg:hidden"/>}
+  <aside className={`fixed inset-y-0 left-0 z-50 flex h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white shadow-2xl transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:translate-x-0 lg:shadow-lg ${mobileOpen?"translate-x-0":"-translate-x-full"}`}>
+   <div className="bg-linear-to-br from-pink-600 via-rose-500 to-rose-400 px-5 py-6 text-white"><div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow"><img src={Logo} alt="OB-GYN Clinic" className="h-10 w-10"/></div><div><h1 className="text-lg font-bold">OB-GYN Clinic</h1><p className="text-xs text-pink-100">Management System</p></div><button type="button" aria-label="Close navigation" onClick={()=>setMobileOpen(false)} className="ml-auto rounded-xl bg-white/15 p-2 lg:hidden"><X size={20}/></button></div></div>
+   <nav className="flex-1 space-y-1 px-3 py-5"><p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[.16em] text-slate-400">Workspace</p>{items.map(item=>{const active=item.name===activeItem;return <Link to={item.path} onClick={()=>setMobileOpen(false)} key={item.name} className={`group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition ${active?"bg-pink-50 text-pink-700 shadow-sm ring-1 ring-pink-100":"text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}><span className={`flex h-9 w-9 items-center justify-center rounded-lg ${active?"bg-pink-500 text-white shadow-sm":"bg-slate-100 text-slate-500 group-hover:bg-white"}`}>{item.icon}</span>{item.name}</Link>})}</nav>
+   <div className="border-t border-slate-100 p-4"><div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3"><div className="flex h-11 w-11 items-center justify-center rounded-xl bg-pink-500 font-bold text-white">{initials(fullname)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-800">{fullname}</p><p className="text-xs text-slate-500">{role}</p></div><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 ring-4 ring-emerald-100"/></div><button type="button" onClick={logout} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"><LogOut size={17}/>Sign out</button></div>
+  </aside>
+ </>;
 }
-
-function getInitials(fullname = "") {
-  const parts = fullname
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return "US";
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join("");
-}
-
-function Sidebar({ activeItem = "Dashboard" }) {
-  const navigate = useNavigate();
-
-  const currentUser = useMemo(() => getStoredUser(), []);
-
-  const visibleMenuItems = menuItems.filter((item) => {
-    if (!item.roles) {
-      return true;
-    }
-
-    return item.roles.includes(currentUser?.role);
-  });
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("obgyn_token");
-    localStorage.removeItem("currentUser");
-
-    navigate("/login", {
-      replace: true,
-    });
-  };
-
-  const fullname =
-    currentUser?.fullname ||
-    currentUser?.full_name ||
-    "Logged-in User";
-
-  const role =
-    currentUser?.role === "doctor"
-      ? "Doctor"
-      : currentUser?.role === "staff"
-        ? "Clinic Staff"
-        : "User";
-
-  const initials = getInitials(fullname);
-
-  return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-pink-100 bg-white shadow-xl lg:flex">
-      <div className="bg-linear-to-br from-pink-500 to-rose-400 px-6 py-6 text-white">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white">
-            <img
-              src={Logo}
-              alt="OB-GYN Clinic"
-              className="h-10 w-10"
-            />
-          </div>
-
-          <div>
-            <h1 className="text-xl font-bold">
-              OB-GYN Clinic
-            </h1>
-
-            <p className="text-sm text-pink-100">
-              Management System
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <nav className="flex-1 space-y-2 px-4 py-6">
-        <p className="mb-3 px-3 text-xs font-semibold uppercase text-gray-400">
-          Main Menu
-        </p>
-
-        {visibleMenuItems.map((item) => {
-          const isActive =
-            item.name === activeItem;
-
-          const classes = `group relative flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition-all duration-300 ${
-            isActive
-              ? "bg-pink-100 text-pink-600 shadow-sm"
-              : "text-gray-600 hover:bg-pink-50 hover:text-pink-600"
-          }`;
-
-          return (
-            <Link
-              to={item.path}
-              key={item.name}
-              className={classes}
-            >
-              <span
-                className={`absolute left-0 h-8 w-1 rounded-r-full bg-pink-500 ${
-                  isActive ? "" : "hidden"
-                }`}
-              />
-
-              <span
-                className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg transition ${
-                  isActive
-                    ? "bg-pink-200"
-                    : "bg-gray-100 group-hover:bg-pink-100"
-                }`}
-              >
-                {item.icon}
-              </span>
-
-              <span className="font-medium">
-                {item.name}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="border-t border-gray-100 p-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-pink-100 bg-linear-to-r from-pink-50 to-rose-50 p-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500 font-bold text-white shadow-md">
-            {initials}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-bold text-gray-800">
-              {fullname}
-            </h3>
-
-            <p className="text-xs text-gray-500">
-              {role}
-            </p>
-          </div>
-
-          <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="mt-3 w-full rounded-xl bg-red-50 py-3 font-medium text-red-500 transition hover:bg-red-100"
-        >
-          Logout
-        </button>
-      </div>
-    </aside>
-  );
-}
-
-export default Sidebar;

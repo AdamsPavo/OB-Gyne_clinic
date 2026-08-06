@@ -89,6 +89,7 @@ const createInitialForm = (patientId = "") => ({
   patient_id: patientId,
   appointment_id: "",
   service_type: "",
+  service_id: "",
   consultation_date: now(),
   chief_complaint: "",
   history_present_illness: "",
@@ -214,6 +215,7 @@ export default function Consultations() {
 
   const [patients, setPatients] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
+  const [serviceSearch, setServiceSearch] = useState("");
   const [patientSearch, setPatientSearch] =
     useState("");
 
@@ -286,7 +288,7 @@ export default function Consultations() {
       try {
         const requests = [
           api("/patients"),
-          api("/service-types"),
+          api("/services/active"),
         ];
 
         if (appointmentIdFromUrl) {
@@ -332,10 +334,11 @@ export default function Consultations() {
             ),
 
             service_type:
-              appointmentRecord.service ||
+              appointmentRecord.service_name || appointmentRecord.service ||
               appointmentRecord.service_type ||
               appointmentRecord.type_of_service ||
               "",
+            service_id: String(appointmentRecord.service_id || ""),
 
             consultation_date:
               appointmentRecord.appointment_date
@@ -689,6 +692,10 @@ export default function Consultations() {
           appointment?.service_type ||
           appointment?.type_of_service ||
           null,
+
+        service_id: Number(
+          form.service_id || appointment?.service_id,
+        ),
 
         diagnoses,
       };
@@ -1313,29 +1320,39 @@ export default function Consultations() {
                 <label className="text-sm font-medium text-slate-600">
   Type of Service
 
+  <input
+    type="search"
+    value={serviceSearch}
+    onChange={(event) => setServiceSearch(event.target.value)}
+    placeholder="Search active services"
+    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+  />
+
   <select
-    value={form.service_type}
+    value={form.service_id}
     onChange={(event) => {
       setForm((current) => ({
         ...current,
-        service_type: event.target.value,
+        service_id: event.target.value,
+        service_type: serviceTypes.find((service) => String(service.id) === event.target.value)?.service_name || "",
       }));
     }}
-    disabled={Boolean(appointmentIdFromUrl)}
-    className={`mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-semibold outline-none transition ${
-      appointmentIdFromUrl
-        ? "cursor-not-allowed bg-slate-100 text-slate-700"
-        : "focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-    }`}
+    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-semibold outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
   >
     <option value="">Select service</option>
 
-   {serviceTypes.map((service) => (
-  <option key={service.id} value={service.name}>
-    {service.name}
+   {serviceTypes.filter((service) => service.service_name.toLowerCase().includes(serviceSearch.trim().toLowerCase())).map((service) => (
+  <option key={service.id} value={service.id}>
+    {service.service_name} — {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(service.price || 0)}
   </option>
 ))}
   </select>
+
+  {form.service_id && (
+    <span className="mt-2 block text-sm font-semibold text-teal-700">
+      Service fee: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(serviceTypes.find((service) => String(service.id) === String(form.service_id))?.price || 0)}
+    </span>
+  )}
 
   {!serviceTypes.length && (
     <span className="mt-1 block text-xs text-amber-600">
@@ -1345,7 +1362,7 @@ export default function Consultations() {
 
   {appointmentIdFromUrl && (
     <span className="mt-1 block text-xs text-teal-600">
-      Automatically loaded from the appointment.
+      Automatically loaded from the appointment; you may change it before saving.
     </span>
   )}
 </label>

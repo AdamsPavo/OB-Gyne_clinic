@@ -162,6 +162,9 @@ export default function CaseDetail() {
 
                   {serviceType}
                 </p>
+                <p className="mt-1 text-sm font-semibold text-teal-50">
+                  {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(record.service_price) || 0)}
+                </p>
               </div>
             )}
           </div>

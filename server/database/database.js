@@ -567,6 +567,41 @@ db.exec(`
     ON invoices(patient_id);
 `);
 
+/* Backward-compatible user migration. Legacy aliases are retained because
+   existing clinical queries still use fullname/password. */
+const userSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql || "";
+const userColumns = db.prepare("PRAGMA table_info(users)").all().map((column) => column.name);
+if (!userColumns.includes("full_name") || !userColumns.includes("password_hash") || !userColumns.includes("is_active") || !userSql.includes("'admin'")) {
+  db.pragma("foreign_keys = OFF");
+  db.pragma("legacy_alter_table = ON");
+  db.transaction(() => {
+    db.exec(`ALTER TABLE users RENAME TO users_legacy;
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, fullname TEXT NOT NULL, full_name TEXT NOT NULL,
+        username TEXT NOT NULL COLLATE NOCASE UNIQUE, password TEXT NOT NULL, password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('admin','doctor','staff')),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );`);
+    const old = db.prepare("PRAGMA table_info(users_legacy)").all().map((column) => column.name);
+    const full = old.includes("full_name") ? "COALESCE(full_name, fullname)" : "fullname";
+    const hash = old.includes("password_hash") ? "COALESCE(password_hash, password)" : "password";
+    const active = old.includes("is_active") ? "is_active" : "1";
+    const updated = old.includes("updated_at") ? "COALESCE(updated_at, created_at)" : "created_at";
+    db.exec(`INSERT INTO users (id,fullname,full_name,username,password,password_hash,role,is_active,created_at,updated_at)
+      SELECT id,fullname,${full},username,password,${hash},LOWER(role),${active},created_at,${updated} FROM users_legacy;
+      DROP TABLE users_legacy;`);
+  })();
+  db.pragma("legacy_alter_table = OFF");
+  db.pragma("foreign_keys = ON");
+}
+
+db.exec(`CREATE TABLE IF NOT EXISTS user_audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, acting_user_id INTEGER, target_user_id INTEGER,
+  action TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (acting_user_id) REFERENCES users(id) ON DELETE SET NULL
+); CREATE INDEX IF NOT EXISTS idx_user_audit_created ON user_audit_logs(created_at);`);
+
 /*
 |--------------------------------------------------------------------------
 | Migration Helper
@@ -629,12 +664,23 @@ for (const column of patientColumns) {
 const consultationCaseColumns = [
   "appointment_id INTEGER REFERENCES appointments(id) ON DELETE SET NULL",
   "service_type TEXT",
+  "service_id INTEGER REFERENCES service_types(id) ON DELETE RESTRICT",
+  "service_name TEXT",
+  "service_price REAL NOT NULL DEFAULT 0",
   "updated_at DATETIME",
 ];
 
 for (const column of consultationCaseColumns) {
   addColumnIfMissing("consultation_cases", column);
 }
+
+const appointmentColumns = [
+  "service_id INTEGER REFERENCES service_types(id) ON DELETE RESTRICT",
+  "service_name TEXT",
+  "service_price REAL NOT NULL DEFAULT 0",
+  "updated_at DATETIME",
+];
+for (const column of appointmentColumns) addColumnIfMissing("appointments", column);
 
 /*
 |--------------------------------------------------------------------------

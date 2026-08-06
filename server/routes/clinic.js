@@ -102,6 +102,40 @@ router.get("/service-types", (req, res) => {
   }
 });
 
+const serviceSelect = `id, name, name AS service_name, default_fee, default_fee AS price, is_active, created_at, updated_at`;
+const serviceManager = (req, res, next) => ["admin", "doctor"].includes(req.user.role)
+  ? next() : res.status(403).json({ message: "Only Admin and Doctor accounts can manage services." });
+const servicePayload = (body) => ({
+  name: text(body.service_name ?? body.name),
+  price: Number(body.price ?? body.default_fee),
+  active: body.is_active === false || body.is_active === 0 ? 0 : 1,
+});
+
+router.get("/services", (req, res) => {
+  const where = req.user.role === "staff" ? "WHERE is_active=1" : "";
+  res.json(db.prepare(`SELECT ${serviceSelect} FROM service_types ${where} ORDER BY is_active DESC, name`).all());
+});
+router.get("/services/active", (req, res) => res.json(db.prepare(`SELECT ${serviceSelect} FROM service_types WHERE is_active=1 ORDER BY name`).all()));
+router.get("/services/:id", (req, res) => {
+  const row = db.prepare(`SELECT ${serviceSelect} FROM service_types WHERE id=?`).get(req.params.id);
+  if (!row || (req.user.role === "staff" && !row.is_active)) return res.status(404).json({ message: "Service not found." });
+  res.json(row);
+});
+router.post("/services", serviceManager, (req, res) => {
+  const value = servicePayload(req.body);
+  if (!value.name) return res.status(400).json({ message: "Service name is required." });
+  if (!Number.isFinite(value.price) || value.price < 0) return res.status(400).json({ message: "Price must be zero or greater." });
+  try { const result=db.prepare("INSERT INTO service_types (name,default_fee,is_active) VALUES (?,?,?)").run(value.name,value.price,value.active); res.status(201).json({id:result.lastInsertRowid,message:"Service added."}); }
+  catch(error){res.status(String(error.message).includes("UNIQUE")?409:500).json({message:String(error.message).includes("UNIQUE")?"That service already exists.":"Unable to add service."});}
+});
+router.put("/services/:id", serviceManager, (req, res) => {
+  const value=servicePayload(req.body); if(!value.name)return res.status(400).json({message:"Service name is required."});
+  if(!Number.isFinite(value.price)||value.price<0)return res.status(400).json({message:"Price must be zero or greater."});
+  try{const result=db.prepare("UPDATE service_types SET name=?,default_fee=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(value.name,value.price,value.active,req.params.id);if(!result.changes)return res.status(404).json({message:"Service not found."});res.json({message:"Service updated."});}catch{res.status(409).json({message:"That service already exists."});}
+});
+router.put("/services/:id/status", serviceManager, (req,res)=>{const result=db.prepare("UPDATE service_types SET is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(req.body.is_active?1:0,req.params.id);if(!result.changes)return res.status(404).json({message:"Service not found."});res.json({message:req.body.is_active?"Service activated.":"Service deactivated."});});
+router.delete("/services/:id", serviceManager, (req,res)=>{const linked=db.prepare(`SELECT 1 FROM appointments WHERE service_id=? UNION ALL SELECT 1 FROM consultation_cases WHERE service_id=? LIMIT 1`).get(req.params.id,req.params.id);if(linked)return res.status(409).json({message:"This service has appointment or consultation history. Mark it inactive instead."});const result=db.prepare("DELETE FROM service_types WHERE id=?").run(req.params.id);if(!result.changes)return res.status(404).json({message:"Service not found."});res.status(204).end();});
+
 router.get("/charge-types", (req, res) => {
   res.json(db.prepare(`SELECT id,name,category,description,default_amount
     FROM charge_types WHERE is_active=1 ORDER BY category,name`).all());
@@ -1098,6 +1132,7 @@ router.post("/cases", (req, res) => {
       patient_id,
       doctor_id,
       appointment_id,
+      service_id,
       service_type,
       service_fee,
       consultation_date,
@@ -1145,7 +1180,8 @@ router.post("/cases", (req, res) => {
           SELECT
             id,
             patient_id,
-            service
+            service,
+            service_id
           FROM appointments
           WHERE id = ?
         `)
@@ -1169,10 +1205,10 @@ router.post("/cases", (req, res) => {
       }
     }
 
-    const resolvedServiceType =
-      String(service_type || "").trim() ||
-      appointment?.service ||
-      null;
+    const resolvedServiceId = Number(service_id || appointment?.service_id);
+    const configuredService = db.prepare("SELECT * FROM service_types WHERE id=? AND is_active=1").get(resolvedServiceId);
+    if (!configuredService) return res.status(400).json({ message: "Select an active service." });
+    const resolvedServiceType = configuredService.name;
 
     const create = db.transaction(() => {
       const case_number = nextNumber(
@@ -1188,7 +1224,10 @@ router.post("/cases", (req, res) => {
             patient_id,
             doctor_id,
             appointment_id,
+            service_id,
             service_type,
+            service_name,
+            service_price,
             consultation_date,
             chief_complaint,
             history_present_illness,
@@ -1217,6 +1256,9 @@ router.post("/cases", (req, res) => {
             ?,
             ?,
             ?,
+            ?,
+            ?,
+            ?,
             ?
           )
         `)
@@ -1225,7 +1267,10 @@ router.post("/cases", (req, res) => {
           patient_id,
           doctor_id || null,
           appointment_id || null,
+          configuredService.id,
           resolvedServiceType,
+          configuredService.name,
+          configuredService.default_fee,
           consultation_date,
           chief_complaint || null,
           history_present_illness || null,
@@ -1312,11 +1357,7 @@ router.post("/cases", (req, res) => {
         doctor_id ? String(doctor_id) : null,
       );
 
-      const configuredService = resolvedServiceType
-        ? db.prepare("SELECT * FROM service_types WHERE name=? COLLATE NOCASE").get(resolvedServiceType)
-        : null;
-      if (configuredService) {
-        upsertInvoiceItem({
+      upsertInvoiceItem({
           invoice_id: invoiceResult.lastInsertRowid,
           patient_id,
           consultation_case_id: result.lastInsertRowid,
@@ -1325,11 +1366,11 @@ router.post("/cases", (req, res) => {
           category: "Service",
           description: configuredService.name,
           quantity: 1,
-          unit_price: service_fee ?? configuredService.default_fee,
+          unit_price: configuredService.default_fee,
           discount: 0,
-        });
-      }
+      });
       recalculateInvoice(invoiceResult.lastInsertRowid);
+      if (appointment_id) db.prepare("UPDATE appointments SET status='Completed',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(appointment_id);
 
       return {
         id: result.lastInsertRowid,
@@ -1338,6 +1379,9 @@ router.post("/cases", (req, res) => {
           appointment_id || null,
         service_type:
           resolvedServiceType,
+        service_id: configuredService.id,
+        service_name: configuredService.name,
+        service_price: configuredService.default_fee,
         invoice_id: invoiceResult.lastInsertRowid,
       };
     });
@@ -2244,16 +2288,19 @@ router.get(
    GENERIC RESOURCES
 ========================================================= */
 
-const resources = {
-  appointments: {
-    table: "appointments",
-    required: [
-      "patient_id",
-      "appointment_date",
-      "service",
-    ],
-  },
+router.get("/appointments", (req,res)=>res.json(db.prepare("SELECT * FROM appointments ORDER BY appointment_date DESC,id DESC").all()));
+router.get("/appointments/:id", (req,res)=>{const row=db.prepare("SELECT * FROM appointments WHERE id=?").get(req.params.id);if(!row)return res.status(404).json({message:"Appointment not found."});res.json(row);});
+const saveAppointment = (req,res,isUpdate=false) => {
+  const service=db.prepare("SELECT * FROM service_types WHERE id=? AND is_active=1").get(req.body.service_id);
+  if(!req.body.patient_id||!req.body.appointment_date||!service)return res.status(400).json({message:"Patient, date, and an active service are required."});
+  if(isUpdate){const result=db.prepare(`UPDATE appointments SET patient_id=?,appointment_date=?,service_id=?,service=?,service_name=?,service_price=?,status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(req.body.patient_id,req.body.appointment_date,service.id,service.name,service.name,service.default_fee,text(req.body.status)||"Scheduled",req.params.id);if(!result.changes)return res.status(404).json({message:"Appointment not found."});return res.json({message:"Appointment updated."});}
+  const result=db.prepare(`INSERT INTO appointments (patient_id,appointment_date,service_id,service,service_name,service_price,status) VALUES (?,?,?,?,?,?,?)`).run(req.body.patient_id,req.body.appointment_date,service.id,service.name,service.name,service.default_fee,text(req.body.status)||"Scheduled");res.status(201).json({id:result.lastInsertRowid,message:"Appointment created."});
+};
+router.post("/appointments",(req,res)=>saveAppointment(req,res));
+router.put("/appointments/:id",(req,res)=>saveAppointment(req,res,true));
+router.delete("/appointments/:id",(req,res)=>{const linked=db.prepare("SELECT id FROM consultation_cases WHERE appointment_id=? LIMIT 1").get(req.params.id);if(linked)return res.status(409).json({message:"This appointment has a consultation and cannot be deleted."});const result=db.prepare("DELETE FROM appointments WHERE id=?").run(req.params.id);if(!result.changes)return res.status(404).json({message:"Appointment not found."});res.status(204).end();});
 
+const resources = {
   consultations: {
     table: "consultations",
     required: [

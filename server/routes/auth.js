@@ -26,7 +26,12 @@ function authenticate(req, res, next) {
   const token = authorization.split(" ")[1];
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = db.prepare("SELECT id, full_name, username, role, is_active FROM users WHERE id = ?").get(payload.id);
+    if (!user || !user.is_active) {
+      return res.status(401).json({ message: "This account is inactive or no longer exists." });
+    }
+    req.user = user;
     next();
   } catch {
     return res.status(401).json({
@@ -190,14 +195,18 @@ router.post("/setup", async (req, res) => {
       const doctorResult = db.prepare(`
         INSERT INTO users (
           fullname,
+          full_name,
           username,
           password,
+          password_hash,
           role
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         doctor.name.trim(),
+        doctor.name.trim(),
         doctor.username.trim(),
+        doctorPasswordHash,
         doctorPasswordHash,
         "doctor"
       );
@@ -205,14 +214,18 @@ router.post("/setup", async (req, res) => {
       const staffResult = db.prepare(`
         INSERT INTO users (
           fullname,
+          full_name,
           username,
           password,
+          password_hash,
           role
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         staff.name.trim(),
+        staff.name.trim(),
         staff.username.trim(),
+        staffPasswordHash,
         staffPasswordHash,
         "staff"
       );
@@ -267,10 +280,11 @@ router.post("/login", async (req, res) => {
       .prepare(`
         SELECT
           id,
-          fullname,
+          full_name,
           username,
-          password,
-          role
+          password_hash,
+          role,
+          is_active
         FROM users
         WHERE LOWER(username) = LOWER(?)
       `)
@@ -278,11 +292,15 @@ router.post("/login", async (req, res) => {
 
     if (
       !user ||
-      !(await bcrypt.compare(password, user.password))
+      !(await bcrypt.compare(password, user.password_hash))
     ) {
       return res.status(401).json({
         message: "Invalid username or password.",
       });
+    }
+
+    if (!user.is_active) {
+      return res.status(403).json({ message: "This account is inactive. Contact an administrator." });
     }
 
     const token = jwt.sign(
@@ -301,9 +319,11 @@ router.post("/login", async (req, res) => {
       token,
       user: {
         id: user.id,
-        fullname: user.fullname,
+        fullname: user.full_name,
+        full_name: user.full_name,
         username: user.username,
         role: user.role,
+        is_active: Boolean(user.is_active),
       },
     });
   } catch (error) {
@@ -380,14 +400,18 @@ router.post(
       const result = db.prepare(`
         INSERT INTO users (
           fullname,
+          full_name,
           username,
           password,
+          password_hash,
           role
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
         fullname.trim(),
+        fullname.trim(),
         username.trim(),
+        hashedPassword,
         hashedPassword,
         "staff"
       );

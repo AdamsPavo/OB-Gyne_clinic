@@ -17,21 +17,21 @@ import {
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 
-const blankForm = {
+const localDateTime = () => {
+  const date = new Date();
+  const timezoneOffset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - timezoneOffset)
+    .toISOString()
+    .slice(0, 16);
+};
+
+const createBlankForm = () => ({
   patient_id: "",
   service: "",
   service_id: "",
-  appointment_date: "",
+  appointment_date: localDateTime(),
   status: "Scheduled",
-};
-
-const statuses = [
-  "Scheduled",
-  "Confirmed",
-  "Completed",
-  "Cancelled",
-  "No Show",
-];
+});
 
 const getLoggedInUser = () => {
   try {
@@ -94,7 +94,7 @@ export default function Appointments() {
     currentUser?.role || "",
   ).toLowerCase();
 
-  const isDoctor = role === "doctor";
+  const isDoctor = ["admin", "doctor"].includes(role);
 
   const isStaff =
     role === "staff" ||
@@ -116,7 +116,7 @@ export default function Appointments() {
     useState([]);
 
   const [form, setForm] = useState({
-    ...blankForm,
+    ...createBlankForm(),
     patient_id: selectedPatientFromUrl,
   });
 
@@ -273,7 +273,7 @@ export default function Appointments() {
     setMessage("");
 
     setForm({
-      ...blankForm,
+      ...createBlankForm(),
       patient_id:
         selectedPatientFromUrl,
     });
@@ -284,7 +284,7 @@ export default function Appointments() {
   const closeForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setForm(blankForm);
+    setForm(createBlankForm());
 
     if (selectedPatientFromUrl) {
       const updatedParams =
@@ -833,10 +833,6 @@ export default function Appointments() {
                         }
                       >
                         {
-                          patient.patient_number
-                        }{" "}
-                        —{" "}
-                        {
                           patient.last_name
                         }
                         ,{" "}
@@ -872,40 +868,7 @@ export default function Appointments() {
                         key={service.id}
                         value={service.id}
                       >
-                        {service.name} —{" "}
-                        {new Intl.NumberFormat(
-                          "en-PH",
-                          {
-                            style: "currency",
-                            currency: "PHP",
-                          },
-                        ).format(
-                          service.default_fee || 0,
-                        )}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-
-              <label className="text-sm font-medium text-slate-600">
-                Status
-
-                <select
-                  name="status"
-                  value={form.status}
-                  onChange={
-                    handleChange
-                  }
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5"
-                >
-                  {statuses.map(
-                    (status) => (
-                      <option
-                        key={status}
-                        value={status}
-                      >
-                        {status}
+                        {service.name}
                       </option>
                     ),
                   )}

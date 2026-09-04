@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Eye, Plus, Search, Trash2 as Archive, Users, X } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
+import { useWorkspace } from "../components/Workspace";
 import { api } from "../api/client";
 
 const blank = { first_name: "", middle_name: "", last_name: "", birth_date: "", civil_status: "", occupation: "", contact_number: "", address: "", blood_type: "", allergies: "", existing_illnesses: "", previous_surgeries: "", family_history: "", ob_history: "", pregnancy_history: "", emergency_contact_name: "", emergency_contact_number: "", notes: "" };
@@ -9,6 +10,7 @@ const age = (date) => date ? Math.floor((Date.now() - new Date(date).getTime()) 
 
 export default function Patient() {
   const navigate = useNavigate();
+  const workspace = useWorkspace();
   const [patients, setPatients] = useState([]), [search, setSearch] = useState(""), [form, setForm] = useState(blank), [show, setShow] = useState(false), [message, setMessage] = useState("");
   const load = () => api("/patients").then(setPatients).catch((error) => setMessage(error.message));
   useEffect(() => { load(); }, []);
@@ -34,7 +36,9 @@ export default function Patient() {
     setShow(false);
 
     // Redirect to Appointment page
-    navigate(`/appointments?patient=${newPatient.id}`);
+    const appointmentPath = `/appointments?patient=${newPatient.id}`;
+    if (workspace) workspace.openTab(appointmentPath);
+    else navigate(appointmentPath);
 
   } catch (error) {
     setMessage(error.message);

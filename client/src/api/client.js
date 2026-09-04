@@ -28,7 +28,8 @@ export async function api(path, options = {}) {
     });
   } catch (error) {
     throw new Error(
-      "The clinic API is unavailable. Make sure the server is running on port 5000, then refresh the page."
+      "The clinic API is unavailable. Make sure the server is running on port 5000, then refresh the page.",
+      { cause: error }
     );
   }
 

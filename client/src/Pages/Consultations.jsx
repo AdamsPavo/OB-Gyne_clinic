@@ -922,6 +922,10 @@ export default function Consultations() {
               patient_id:
                 appointment.patient_id,
 
+              service_id:
+                appointment.service_id ||
+                form.service_id,
+
               service:
                 appointment.service,
 

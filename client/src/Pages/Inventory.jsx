@@ -5,7 +5,7 @@ import { api } from "../api/client";
 
 const categories = ["Medicines","Vitamins and Supplements","Laboratory Supplies","Prenatal Supplies","Medical Equipment","Disposable Supplies","Office Supplies","Other Clinic Supplies"];
 const reasons = ["Used During Consultation","Dispensed to Patient","Used for Laboratory Procedure","Used for Prenatal Checkup","Damaged","Expired","Lost","Adjustment","Other"];
-const blankItem = { item_code:"",item_name:"",category:"Medicines",brand:"",description:"",unit_of_measurement:"piece",supplier:"",minimum_stock_level:"10",unit_cost:"",storage_location:"" };
+const blankItem = { item_name:"",category:"Medicines",brand:"",unit_of_measurement:"piece",supplier:"",minimum_stock_level:"10",unit_cost:"",selling_price:"",storage_location:"" };
 const blankMove = { inventory_item_id:"",quantity:"",supplier:"",batch_number:"",expiration_date:"",unit_cost:"",reference_number:"",transaction_date:new Date().toISOString().slice(0,10),reason:"Used During Consultation",department:"",requested_by:"",remarks:"" };
 const money = value => new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP"}).format(Number(value||0));
 const user = () => { try { return JSON.parse(localStorage.getItem("currentUser")||"{}"); } catch { return {}; } };
@@ -50,9 +50,9 @@ function Items({items,show}){const [open,setOpen]=useState(false),[edit,setEdit]
  const set=k=>e=>setForm({...form,[k]:e.target.value});
  return <Panel title="Inventory Items" description="Add item details here; all stock changes happen through transactions." action={<button onClick={()=>setOpen(true)} className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 font-bold text-white"><Plus size={18}/>Add Item</button>}>
   {open&&<form onSubmit={save} className="mt-5 grid gap-4 rounded-2xl bg-teal-50/50 p-4 sm:grid-cols-2 lg:grid-cols-3">
-   <Field label="Item Code" value={form.item_code} onChange={set("item_code")} required/><Field label="Item Name" value={form.item_name} onChange={set("item_name")} required/>
+   <Field label="Item Name" value={form.item_name} onChange={set("item_name")} required/>
    <Select label="Category" value={form.category} onChange={set("category")}>{categories.map(c=><option key={c}>{c}</option>)}</Select>
-   {["brand","description","unit_of_measurement","supplier","minimum_stock_level","unit_cost","storage_location"].map(k=><Field key={k} label={k.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())} type={["minimum_stock_level","unit_cost"].includes(k)?"number":"text"} min="0" step={k==="unit_cost"?".01":undefined} value={form[k]||""} onChange={set(k)} required={k==="unit_of_measurement"}/>)}
+   {["brand","unit_of_measurement","supplier","minimum_stock_level","unit_cost","selling_price","storage_location"].map(k=><Field key={k} label={k.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())} type={["minimum_stock_level","unit_cost","selling_price"].includes(k)?"number":"text"} min="0" step={["unit_cost","selling_price"].includes(k)?".01":undefined} value={form[k]||""} onChange={set(k)} required={k==="unit_of_measurement"}/>) }
    <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-3"><button type="button" onClick={close} className="rounded-xl border px-4 py-2">Cancel</button><button className="rounded-xl bg-teal-600 px-5 py-2 font-bold text-white">Save Item</button></div>
   </form>}
   <div className="mt-5 flex items-center gap-2 rounded-xl border px-3 py-2 max-w-md"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search item code, name, category" className="w-full"/></div>

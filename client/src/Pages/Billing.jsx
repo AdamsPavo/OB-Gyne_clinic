@@ -440,6 +440,15 @@ export default function Billing() {
       setCashReceived("");
 
       await loadBillings();
+
+      if (updatedStatus === "Paid") {
+        setShowCashier(false);
+        setSelectedInvoice(null);
+        setBillingFocus(null);
+        setTotalAmount("");
+        setPaymentAmount("");
+        setMessage("");
+      }
     } catch (err) {
       setError(err.message);
     } finally {

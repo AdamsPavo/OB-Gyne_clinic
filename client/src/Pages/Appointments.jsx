@@ -122,6 +122,9 @@ export default function Appointments() {
 
   const [search, setSearch] =
     useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [patientSearchOpen, setPatientSearchOpen] = useState(false);
+  const [activePatientIndex, setActivePatientIndex] = useState(-1);
 
   const [showForm, setShowForm] =
     useState(
@@ -208,6 +211,24 @@ export default function Appointments() {
     );
   }, [patients]);
 
+  const matchingPatients = useMemo(() => {
+    const terms = patientSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return patients.filter((patient) => {
+      const searchable = `${patientMap.get(String(patient.id)) || ""} ${patient.patient_number || ""}`.toLowerCase();
+      return terms.every((term) => searchable.includes(term));
+    });
+  }, [patients, patientMap, patientSearch]);
+
+  const selectedPatientName = patientMap.get(String(form.patient_id));
+
+  const selectPatient = (patient) => {
+    setForm((current) => ({ ...current, patient_id: String(patient.id) }));
+    setPatientSearch("");
+    setPatientSearchOpen(false);
+    setActivePatientIndex(-1);
+  };
+
+
   const matchesSearch = (
     appointment,
   ) => {
@@ -269,6 +290,9 @@ export default function Appointments() {
   const openNewAppointment = () => {
     if (!canManageAppointments) return;
 
+    setPatientSearch("");
+    setPatientSearchOpen(false);
+    setActivePatientIndex(-1);
     setEditingId(null);
     setMessage("");
 
@@ -282,6 +306,9 @@ export default function Appointments() {
   };
 
   const closeForm = () => {
+    setPatientSearch("");
+    setPatientSearchOpen(false);
+    setActivePatientIndex(-1);
     setShowForm(false);
     setEditingId(null);
     setForm(createBlankForm());
@@ -390,6 +417,9 @@ export default function Appointments() {
     if (!canManageAppointments) return;
 
     setEditingId(appointment.id);
+    setPatientSearch("");
+    setPatientSearchOpen(false);
+    setActivePatientIndex(-1);
 
     setForm({
       patient_id: String(
@@ -464,9 +494,14 @@ export default function Appointments() {
     records,
     completed = false,
   }) => (
-    <div className="mt-6 overflow-x-auto">
+    <div
+      tabIndex={completed ? 0 : undefined}
+      role={completed ? "region" : undefined}
+      aria-label={completed ? "Completed consultations" : undefined}
+      className={completed ? "mt-6 min-h-0 overflow-auto overscroll-contain" : "mt-6 overflow-x-auto"}
+    >
       <table className="w-full min-w-212.5 text-left">
-        <thead>
+        <thead className={completed ? "sticky top-0 z-10 bg-white" : undefined}>
           <tr className="border-b text-xs uppercase text-slate-400">
             <th className="p-3">
               Patient
@@ -739,8 +774,8 @@ export default function Appointments() {
             />
           </section>
 
-          <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-center gap-3">
+          <section className="flex max-h-[calc(100dvh-5rem)] min-h-0 scroll-mt-16 flex-col rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex shrink-0 items-center gap-3">
               <div className="rounded-2xl bg-emerald-50 p-3">
                 <CheckCircle2 className="text-emerald-600" />
               </div>
@@ -804,46 +839,90 @@ export default function Appointments() {
             </div>
 
             <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <label className="text-sm font-medium text-slate-600 sm:col-span-2">
-                Patient
-
-                <select
-                  name="patient_id"
-                  value={
-                    form.patient_id
+              <div
+                className="relative sm:col-span-2"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) {
+                    setPatientSearchOpen(false);
+                    setActivePatientIndex(-1);
                   }
-                  onChange={
-                    handleChange
-                  }
-                  required
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5"
-                >
-                  <option value="">
-                    Select patient
-                  </option>
+                }}
+              >
+                <label className="block text-sm font-medium text-slate-600">
+                  Patient
+                  <span className="mt-1 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 focus-within:border-pink-400">
+                    <Search size={18} className="shrink-0 text-slate-400" />
+                    <input
+                      type="text"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={patientSearchOpen}
+                      aria-controls="appointment-patient-results"
+                      aria-activedescendant={patientSearchOpen && matchingPatients[activePatientIndex] ? `appointment-patient-${matchingPatients[activePatientIndex].id}` : undefined}
+                      autoComplete="off"
+                      value={patientSearch}
+                      onFocus={() => setPatientSearchOpen(true)}
+                      onChange={(event) => {
+                        setPatientSearch(event.target.value);
+                        setPatientSearchOpen(true);
+                        setActivePatientIndex(-1);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setPatientSearchOpen(true);
+                          const next = event.key === "ArrowDown"
+                            ? Math.min(activePatientIndex + 1, matchingPatients.length - 1)
+                            : Math.max(activePatientIndex - 1, 0);
+                          setActivePatientIndex(next);
+                          if (matchingPatients[next]) {
+                            document.getElementById(`appointment-patient-${matchingPatients[next].id}`)?.scrollIntoView({ block: "nearest" });
+                          }
+                        } else if (event.key === "Enter" && patientSearchOpen) {
+                          event.preventDefault();
+                          if (matchingPatients[activePatientIndex]) selectPatient(matchingPatients[activePatientIndex]);
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          setPatientSearchOpen(false);
+                          setActivePatientIndex(-1);
+                        }
+                      }}
+                      placeholder="Search by full name or patient number"
+                      className="min-w-0 w-full outline-none"
+                    />
+                  </span>
+                </label>
+                {patientSearchOpen && (
+                  <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                    <ul id="appointment-patient-results" role="listbox" aria-label="Patients">
+                      {matchingPatients.map((patient, index) => (
+                        <li
+                          key={patient.id}
+                          id={`appointment-patient-${patient.id}`}
+                          role="option"
+                          aria-selected={String(patient.id) === String(form.patient_id)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectPatient(patient)}
+                          className={`cursor-pointer px-3 py-2.5 text-sm hover:bg-pink-50 ${index === activePatientIndex ? "bg-pink-50" : ""}`}
+                        >
+                          <span className="block break-words font-medium text-slate-800">{patientMap.get(String(patient.id))}</span>
+                          {patient.patient_number && <span className="text-xs text-slate-500">{patient.patient_number}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    {matchingPatients.length === 0 && (
+                      <p role="status" className="px-3 py-2.5 text-sm text-slate-500">No patients match your search.</p>
+                    )}
+                  </div>
+                )}
+              </div>
 
-                  {patients.map(
-                    (patient) => (
-                      <option
-                        key={
-                          patient.id
-                        }
-                        value={
-                          patient.id
-                        }
-                      >
-                        {
-                          patient.last_name
-                        }
-                        ,{" "}
-                        {
-                          patient.first_name
-                        }
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
+              {selectedPatientName && (
+                <div aria-live="polite" className="rounded-xl bg-pink-50 px-4 py-3 sm:col-span-2">
+                  <p className="text-xs font-medium text-slate-500">Selected patient</p>
+                  <p className="break-words font-semibold text-pink-700">{selectedPatientName}</p>
+                </div>
+              )}
 
               <label className="text-sm font-medium text-slate-600">
                 Service
@@ -892,6 +971,8 @@ export default function Appointments() {
                 />
               </label>
             </div>
+
+            {message && <p role="alert" className="mt-4 text-sm text-red-600">{message}</p>}
 
             <div className="mt-7 flex justify-end gap-3">
               <button

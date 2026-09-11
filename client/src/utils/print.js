@@ -478,11 +478,28 @@ const styles = `
     padding-top: 4px;
   }
 
+  .consultation-sheet { font-size: 11px; line-height: 1.45; }
+  .consultation-sheet .clinic-header { padding: 10px 14px; }
+  .consultation-sheet .clinic-header h1 { font-size: 19px; }
+  .consultation-sheet .document-band { padding: 8px 14px; }
+  .consultation-sheet .patient-card { margin: 12px 0; }
+  .consultation-sheet .field { min-height: 0; padding: 8px 10px; }
+  .consultation-sheet h2 { margin: 16px 0 7px; font-size: 12px; break-after: avoid; }
+  .consultation-sheet .note { padding: 10px 12px; white-space: normal; }
+  .consultation-sheet .details { gap: 8px; margin-top: 8px; }
+  .consultation-sheet .details > div { min-width: 0; }
+  .consultation-sheet .detail-label { display: block; margin-bottom: 5px; font-size: 10px; color: #475569; }
+  .consultation-sheet .text-block { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; orphans: 3; widows: 3; }
+  .consultation-sheet .vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .consultation-sheet .vitals > div { padding: 9px 10px; border: 1px solid #e2e8f0; border-radius: 6px; break-inside: avoid; }
+  .consultation-sheet .vitals strong { display: block; }
+  .consultation-sheet .footer { margin-top: 28px; break-inside: avoid; }
+
   @media print {
     html,
     body {
-      width: 210mm;
-      min-height: 297mm;
+      width: auto;
+      min-height: 0;
     }
 
     body {
@@ -670,92 +687,57 @@ const list = (items, renderer) =>
     ? `<ul>${items.map(renderer).join("")}</ul>`
     : `<p class="note empty">No items recorded.</p>`;
 
-/*
-  CONSULTATION PRINT
-  Compact and limited to one A4 page.
-*/
-export const printCase = (record) =>
-  open(
+const display = (value) => value === null || value === undefined || value === "" ? "—" : value;
+const measurement = (value, unit) => value === null || value === undefined || value === "" ? "—" : `${value} ${unit}`;
+const printDetail = (label, value) => `<div class="note"><b class="detail-label">${esc(label)}</b><p class="text-block">${esc(display(value))}</p></div>`;
+const labResultsText = (record) => record.lab_results ?? (record.laboratory_requests || []).flatMap((request) =>
+  (request.items || []).filter((item) => item.result).map((item) => `${item.test_name}${item.result_date ? ` (${item.result_date})` : ""}:\n${item.result}`)
+).join("\n\n");
+
+export const printMedicalCertificate = (record) => open(
+  `Medical Certificate${record.charge_number ? ` ${record.charge_number}` : ""}`,
+  `${header({ ...record, doctor_name: record.physician }, "Medical Certificate", record.charge_number ? `MC-${record.charge_number}` : "", record.issued_date)}
+   <h2>To whom it may concern</h2>
+   <p>This is to certify that <strong>${esc(record.patient_name)}</strong> was examined on <strong>${esc(record.examination_date)}</strong> with the following findings:</p>
+   <h2>Clinical findings / diagnosis</h2><p class="text-block">${esc(record.findings)}</p>
+   ${record.recommendations ? `<h2>Recommendations / rest period</h2><p class="text-block">${esc(record.recommendations)}</p>` : ""}
+   ${record.purpose ? `<p class="text-block" style="margin-top:24px">${esc(record.purpose)}</p>` : ""}
+   <footer class="footer" style="padding-top:45px"><span>${record.charge_number ? `Certificate reference: ${esc(record.charge_number)}` : ""}</span>
+   <span class="signature">${esc(record.physician)}<br>Physician signature${record.license_number ? `<br>License no. ${esc(record.license_number)}` : ""}</span></footer>`,
+  "sheet consultation-sheet",
+);
+
+/* Consultation records flow onto additional pages when needed. */
+export const printCase = (record) => {
+  const date = record.consultation_date?.replace("T", " ").slice(0, 16);
+  const diagnosis = record.diagnoses?.map((item) => item.diagnosis_name).filter(Boolean).join(", ");
+  return open(
     `Consultation ${record.case_number}`,
-    `
-      ${header(
-        record,
-        "Consultation Record",
-        record.case_number,
-        record.consultation_date,
-      )}
-
-      <h2>Clinical details</h2>
-
-      <p class="note">
-        Type of Service: <b>${esc(record.service_name || record.service_type)}</b>
-        &nbsp; · &nbsp;
-        Service Fee: <b>${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(Number(record.service_price) || 0)}</b>
-      </p>
-
-      <div class="details">
-        <div class="note">
-          <b>Chief complaint</b>
-          <br>
-          ${esc(record.chief_complaint)}
-        </div>
-
-        <div class="note">
-          <b>Diagnosis</b>
-          <br>
-          ${esc(
-            record.diagnoses
-              ?.map((item) => item.diagnosis_name)
-              .filter(Boolean)
-              .join(", "),
-          )}
-        </div>
-
-        <div class="note">
-          <b>History of present illness</b>
-          <br>
-          ${esc(record.history_present_illness)}
-        </div>
-
-        <div class="note">
-          <b>Treatment</b>
-          <br>
-          ${esc(record.treatment)}
-        </div>
-      </div>
-
-      <h2>Vital signs</h2>
-
-      <p class="note">
-        Blood pressure:
-        <b>${esc(record.blood_pressure)}</b>
-
-        &nbsp; · &nbsp;
-
-        Temperature:
-        <b>${esc(record.temperature_c)} °C</b>
-
-        &nbsp; · &nbsp;
-
-        Weight:
-        <b>${esc(record.weight_kg)} kg</b>
-
-        &nbsp; · &nbsp;
-
-        Height:
-        <b>${esc(record.height_cm)} cm</b>
-      </p>
-
-      <h2>Doctor's notes</h2>
-
-      <p class="note">
-        ${esc(record.doctor_notes)}
-      </p>
-
-      ${footer()}
-    `,
-    "sheet one-page-sheet consultation-sheet",
+    `${header(record, "Consultation Record", record.case_number, date)}
+    <h2>Clinical details</h2>
+    <div class="note">Type of service: <b>${esc(display(record.service_name || record.service_type))}</b></div>
+    <div class="details">
+      ${printDetail("Chief complaint", record.chief_complaint)}
+      ${printDetail("Diagnosis", diagnosis)}
+      ${printDetail("History of present illness", record.history_present_illness)}
+      ${printDetail("Treatment", record.treatment)}
+    </div>
+    <h2>Vital signs</h2>
+    <div class="vitals">
+      <div><span class="detail-label">Blood pressure</span><strong>${esc(measurement(record.blood_pressure, "mmHg"))}</strong></div>
+      <div><span class="detail-label">Temperature</span><strong>${esc(measurement(record.temperature_c, "°C"))}</strong></div>
+      <div><span class="detail-label">Weight</span><strong>${esc(measurement(record.weight_kg, "kg"))}</strong></div>
+      <div><span class="detail-label">Height</span><strong>${esc(measurement(record.height_cm, "cm"))}</strong></div>
+    </div>
+    <h2>Laboratory results</h2>
+    <div class="note"><p class="text-block">${esc(display(labResultsText(record)))}</p></div>
+    <h2>Doctor's notes</h2>
+    <div class="note"><p class="text-block">${esc(display(record.doctor_notes))}</p></div>
+    ${record.follow_up_date ? `<h2>Follow-up date</h2><p class="text-block">${esc(record.follow_up_date)}</p>` : ""}
+    ${footer()}`,
+    "sheet consultation-sheet",
   );
+};
 
 /*
   MEDICINE PRESCRIPTION PRINT
@@ -915,4 +897,25 @@ export const printLaboratoryRequest = (record) => {
     `,
     "sheet lab-sheet",
   );
+};
+
+export const printStatementOfAccount = (record) => {
+  const money = value => new Intl.NumberFormat("en-PH", {style:"currency",currency:"PHP"}).format(Number(value || 0));
+  const row = values => `<tr>${values.map(value => `<td style="padding:8px;border-bottom:1px solid #ddd">${esc(value)}</td>`).join("")}</tr>`;
+  const table = (labels, rows) => `<table style="width:100%;border-collapse:collapse"><thead>${row(labels)}</thead><tbody>${rows}</tbody></table>`;
+  const items = (record.items || []).map(item => row([item.description,item.category,item.quantity,money(item.unit_price),money(item.item_discount),money(item.final_amount)])).join("");
+  const adjustments = (record.adjustments || []).map(item => row([item.created_at,item.adjustment_type,item.reason,money(item.amount)])).join("");
+  const payments = (record.payments || []).map(item => row([item.payment_date,item.receipt_number || item.reference_number || "",item.payment_method,money(item.amount)])).join("");
+  open(`Statement of Account ${record.invoice_number}`, `
+    ${header(record,"Statement of Account",record.invoice_number,record.invoice_date)}
+    <p>Payment status: <strong>${esc(record.payment_status)}</strong></p>
+    <h2>Charge breakdown</h2>
+    ${items ? table(["Description","Category","Qty","Unit price","Discount","Amount"],items) : '<p>Itemized charges were not stored for this older bill. The recorded total is shown below.</p>'}
+    <h2>Adjustments</h2>${adjustments ? table(["Date","Type","Reason","Amount"],adjustments) : '<p>No adjustments.</p>'}
+    <div class="note"><p>Total: <strong>${esc(money(record.total_amount))}</strong></p>
+    <p>Amount paid: <strong>${esc(money(record.paid_amount))}</strong></p>
+    <p>Remaining balance: <strong>${esc(money(Math.max(0,Number(record.total_amount||0)-Number(record.paid_amount||0))))}</strong></p></div>
+    <h2>Payment history</h2>${payments ? table(["Date","Receipt / Reference","Method","Amount"],payments) : '<p>No payment entries recorded.</p>'}
+    <footer class="footer"><span class="signature">Prepared by</span><span class="signature">Received by / Patient signature</span></footer>
+  `,"sheet consultation-sheet");
 };

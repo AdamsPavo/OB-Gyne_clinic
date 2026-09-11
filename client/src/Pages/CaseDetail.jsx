@@ -3,12 +3,14 @@ import {
   ArrowLeft,
   BriefcaseMedical,
   Printer,
+  Pencil,
 } from "lucide-react";
 import {
   Link,
   useParams,
 } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
+import { hasRole } from "../auth";
 import { api } from "../api/client";
 import {
   printCase,
@@ -192,6 +194,11 @@ export default function CaseDetail() {
                 </p>
               </div>
 
+              <div className="flex flex-wrap gap-2">
+              {hasRole("admin", "doctor") && <Link to={`/consultations/new?edit=${id}`}
+                className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 font-semibold text-white">
+                <Pencil size={17} />Edit consultation
+              </Link>}
               <button
                 type="button"
                 onClick={() =>
@@ -208,7 +215,10 @@ export default function CaseDetail() {
                 <Printer size={17} />
                 Print consultation
               </button>
+              </div>
             </div>
+
+
 
             <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <Detail
@@ -351,9 +361,66 @@ export default function CaseDetail() {
               )
             }
           />
+          <LabResults key={id} caseId={id} hasSavedResults={record.lab_results != null}
+            initialValue={record.lab_results ?? laboratoryRequests.flatMap((request) =>
+              (request.items || []).filter((item) => item.result).map((item) =>
+                `${item.test_name}${item.result_date ? ` (${item.result_date})` : ""}:\n${item.result}`
+              )).join("\n\n")}
+            onSaved={(value) => setRecord((current) => ({ ...current, lab_results: value }))}
+          />
         </main>
       </div>
     </div>
+  );
+}
+
+function LabResults({ caseId, initialValue, hasSavedResults, onSaved }) {
+  const [result, setResult] = useState(initialValue || "");
+  const [editing, setEditing] = useState(!hasSavedResults && !initialValue?.trim());
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  const save = async (event) => {
+    event.preventDefault();
+    if (saving || !editing) return;
+    setSaving(true);
+    setMessage("");
+    setFailed(false);
+    try {
+      const value = result.trim();
+      await api(`/cases/${caseId}`, {
+        method: "PATCH", body: JSON.stringify({ lab_results: value }),
+      });
+      onSaved(value);
+      setResult(value);
+      setEditing(false);
+      setMessage("Lab results saved.");
+    } catch (error) {
+      setFailed(true);
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={save} className="consultation-form rounded-3xl bg-white p-6 shadow-sm">
+      <label className="block text-xl font-bold text-slate-800">
+        Laboratory results
+        <textarea rows={6} value={result} disabled={saving} readOnly={!editing}
+          onChange={(event) => { setResult(event.target.value); setMessage(""); }}
+          placeholder="Type the laboratory results here..."
+          className="mt-4 block w-full rounded-xl border border-slate-200 p-3 text-sm font-normal read-only:bg-slate-50" />
+      </label>
+      {editing ? <button type="submit" disabled={saving} className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+        {saving ? "Saving..." : "Save lab results"}
+      </button> : <button type="button" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }}
+        className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white">
+        Edit lab results
+      </button>}
+      {message && <p role={failed ? "alert" : "status"} className={`mt-3 text-sm ${failed ? "text-red-600" : "text-teal-700"}`}>{message}</p>}
+    </form>
   );
 }
 

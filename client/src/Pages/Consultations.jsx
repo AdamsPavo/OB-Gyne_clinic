@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -17,15 +17,16 @@ import {
 } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
+import { latestConsultation, prefillConsultation } from "../utils/consultationPrefill";
 
 const now = () => new Date().toISOString().slice(0, 16);
 const today = () => new Date().toISOString().slice(0, 10);
 const CONSULTATION_DRAFT_KEY = "obgyn_consultation_draft";
 
-const readConsultationDraft = () => {
+const readConsultationDraft = (key = CONSULTATION_DRAFT_KEY) => {
   try {
     return JSON.parse(
-      localStorage.getItem(CONSULTATION_DRAFT_KEY) || "null",
+      localStorage.getItem(key) || "null",
     );
   } catch {
     return null;
@@ -211,7 +212,19 @@ export default function Consultations() {
 
   const appointmentIdFromUrl =
     searchParams.get("appointment") || "";
-  const savedDraft = readConsultationDraft();
+  const editCaseId = searchParams.get("edit") || "";
+  const prenatalFromUrl = searchParams.get("prenatal") === "1";
+  const pregnancyIdFromUrl = searchParams.get("pregnancy") || "";
+  const [pregnancyContext, setPregnancyContext] = useState({ patientId: "", pregnancy: null, error: "", loading: false });
+  const pendingCase = useRef(null);
+  const draftKey = prenatalFromUrl ? `${CONSULTATION_DRAFT_KEY}_prenatal_${patientIdFromUrl || "new"}` : CONSULTATION_DRAFT_KEY;
+  const [editingCase, setEditingCase] = useState(null);
+  const [editLoadFailed, setEditLoadFailed] = useState(false);
+  const candidateDraft = editCaseId ? null : readConsultationDraft(draftKey);
+  const savedDraft = patientIdFromUrl && String(candidateDraft?.form?.patient_id) !== patientIdFromUrl ? null : candidateDraft;
+  const touchedHistoryFields = useRef(new Set());
+  const [previousConsultation, setPreviousConsultation] = useState(null);
+  const [historyStatus, setHistoryStatus] = useState({ patientId: "", loading: false, error: "" });
 
   const [patients, setPatients] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
@@ -237,7 +250,7 @@ export default function Consultations() {
   }));
 
   const isPrenatal =
-    form.service_type === "Prenatal Checkup";
+    /prenatal/i.test(form.service_type);
 
   const [prescription, setPrescription] =
     useState(savedDraft?.prescription || {
@@ -270,15 +283,16 @@ export default function Consultations() {
   })();
 
   useEffect(() => {
+    if (editCaseId) return;
     localStorage.setItem(
-      CONSULTATION_DRAFT_KEY,
+      draftKey,
       JSON.stringify({
         form,
         prescription,
         laboratory,
       }),
     );
-  }, [form, prescription, laboratory]);
+  }, [form, prescription, laboratory, editCaseId, draftKey]);
 
   useEffect(() => {
     const loadPage = async () => {
@@ -291,7 +305,9 @@ export default function Consultations() {
           api("/services/active"),
         ];
 
-        if (appointmentIdFromUrl) {
+        if (editCaseId) {
+          requests.push(api(`/cases/${editCaseId}`));
+        } else if (appointmentIdFromUrl) {
           requests.push(
             api(
               `/appointments/${appointmentIdFromUrl}`,
@@ -315,7 +331,27 @@ export default function Consultations() {
             : [],
         );
 
-        if (appointmentRecord) {
+        if (editCaseId) {
+          const saved = responses[2];
+          const prenatal = saved.prenatal_record || {};
+          const initial = createInitialForm(String(saved.patient_id));
+          for (const key of Object.keys(initial)) {
+            if (saved[key] != null && !Array.isArray(saved[key])) initial[key] = String(saved[key]);
+            if (prenatal[key] != null) initial[key] = String(prenatal[key]);
+          }
+          initial.patient_id = String(saved.patient_id);
+          initial.appointment_id = saved.appointment_id ? String(saved.appointment_id) : "";
+          initial.consultation_date = saved.consultation_date?.replace(" ", "T").slice(0, 16) || "";
+          initial.diagnoses = (saved.diagnoses || []).map((item) => item.diagnosis_name).join("\n");
+          initial.expected_delivery_date = prenatal.estimated_delivery_date || "";
+          initial.prenatal_notes = prenatal.notes || "";
+          initial.next_prenatal_visit = prenatal.next_visit_date || "";
+          setForm(initial);
+          setEditingCase(saved);
+          setEditLoadFailed(false);
+          setPrescription({ issued_date: today(), diagnosis: "", notes: "", items: [{ ...blankMedicine }] });
+          setLaboratory({ requested_date: today(), indication: "", notes: "", items: [], other_test: "" });
+        } else if (appointmentRecord) {
           setAppointment(appointmentRecord);
 
           setForm((currentForm) => ({
@@ -348,6 +384,15 @@ export default function Consultations() {
                   )
                 : currentForm.consultation_date,
           }));
+        } else if (prenatalFromUrl) {
+          const prenatalService = serviceRecords.find((service) => /prenatal/i.test(service.service_name));
+          setForm((currentForm) => ({
+            ...currentForm,
+            patient_id: patientIdFromUrl || currentForm.patient_id,
+            service_id: prenatalService ? String(prenatalService.id) : "",
+            service_type: prenatalService?.service_name || "Prenatal Checkup",
+          }));
+          if (!prenatalService) setResult("Add or activate a prenatal service in Tools before saving this consultation.");
         } else if (patientIdFromUrl) {
           setForm((currentForm) => ({
             ...currentForm,
@@ -357,6 +402,7 @@ export default function Consultations() {
           }));
         }
       } catch (error) {
+        if (editCaseId) setEditLoadFailed(true);
         setResult(error.message);
       } finally {
         setLoading(false);
@@ -367,6 +413,8 @@ export default function Consultations() {
   }, [
     patientIdFromUrl,
     appointmentIdFromUrl,
+    editCaseId,
+    prenatalFromUrl,
   ]);
 
   const selectedPatient = patients.find(
@@ -374,6 +422,63 @@ export default function Consultations() {
       String(patient.id) ===
       String(form.patient_id),
   );
+
+  useEffect(() => {
+    if (editCaseId || loading || !form.patient_id) return;
+    let cancelled = false;
+    const patientId = String(form.patient_id);
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setPreviousConsultation(null);
+      setHistoryStatus({ patientId, loading: true, error: "" });
+      try {
+        const cases = await api(`/patients/${patientId}/cases`);
+        const latest = latestConsultation(cases);
+        const previous = latest ? await api(`/cases/${latest.id}`) : null;
+        if (cancelled) return;
+        if (previous && String(previous.patient_id) === patientId) {
+          setPreviousConsultation(previous);
+          setForm((current) => String(current.patient_id) === patientId
+            ? prefillConsultation(current, { ...previous, prenatal_record: null }, touchedHistoryFields.current) : current);
+        }
+        setHistoryStatus({ patientId, loading: false, error: "" });
+      } catch {
+        if (!cancelled) setHistoryStatus({ patientId, loading: false, error: "Previous consultation could not be loaded. You can enter the history manually." });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [form.patient_id, editCaseId, loading]);
+
+  const historyLoading = !editCaseId && Boolean(form.patient_id) &&
+    (historyStatus.patientId !== String(form.patient_id) || historyStatus.loading);
+
+  useEffect(() => {
+    if (!isPrenatal || !form.patient_id || loading) return;
+    let cancelled = false;
+    const patientId = String(form.patient_id);
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setPregnancyContext({ patientId, pregnancy: null, error: "", loading: true });
+      try {
+        const pregnancyId = editingCase?.prenatal_record?.pregnancy_id || pregnancyIdFromUrl;
+        const response = pregnancyId ? { pregnancy: await api(`/pregnancies/${pregnancyId}`) } : await api(`/pregnancies/current/${patientId}`);
+        if (cancelled) return;
+        const pregnancy = response.pregnancy;
+        if (pregnancy && String(pregnancy.patient_id) !== patientId) throw new Error("This pregnancy belongs to another patient.");
+        if (!editCaseId && pregnancy && pregnancy.status !== "Active") throw new Error("This pregnancy is closed or awaiting review. Open Prenatal Records to select or start an active pregnancy.");
+        if (!editCaseId && response.needs_review) throw new Error("Review the patient's historical pregnancy records and activate the current pregnancy, or start a new one.");
+        setPregnancyContext({ patientId, pregnancy, error: "", loading: false });
+        if (!editCaseId) setForm((current) => {
+          if (String(current.patient_id) !== patientId) return current;
+          if (!pregnancy) return { ...current, lmp_date: touchedHistoryFields.current.has("lmp_date") ? current.lmp_date : "", expected_delivery_date: touchedHistoryFields.current.has("lmp_date") ? current.expected_delivery_date : "" };
+          return { ...prefillConsultation(current, { prenatal_record: { ...pregnancy, estimated_delivery_date: pregnancy.official_edd } }, touchedHistoryFields.current),
+            lmp_date: pregnancy.lmp_date || "", expected_delivery_date: pregnancy.official_edd || "" };
+        });
+      } catch (error) { if (!cancelled) setPregnancyContext({ patientId, pregnancy: null, error: error.message, loading: false }); }
+    });
+    return () => { cancelled = true; };
+  }, [form.patient_id, isPrenatal, loading, editCaseId, editingCase?.prenatal_record?.pregnancy_id, pregnancyIdFromUrl]);
+  const pregnancyLoading = isPrenatal && Boolean(form.patient_id) && (pregnancyContext.patientId !== String(form.patient_id) || pregnancyContext.loading);
 
   const prenatalRiskAssessment = (() => {
     const reasons = [];
@@ -417,20 +522,22 @@ export default function Consultations() {
   })();
 
   useEffect(() => {
-    if (!isPrenatal || !form.lmp_date) return;
+    if (!isPrenatal || (!form.lmp_date && !pregnancyContext.pregnancy?.official_edd)) return;
+    const officialEdd = pregnancyContext.patientId === String(form.patient_id) ? pregnancyContext.pregnancy?.official_edd : null;
+    const datingLmp = officialEdd ? new Date(Date.parse(officialEdd) - 280 * 86400000).toISOString().slice(0, 10) : form.lmp_date;
     const gestationalAge = calculateGestationalAge(
-      form.lmp_date,
+      datingLmp,
       form.consultation_date,
     );
     const estimatedDeliveryDate = calculateEstimatedDeliveryDate(form.lmp_date);
 
     setForm((current) => ({
       ...current,
-      expected_delivery_date: estimatedDeliveryDate,
+      expected_delivery_date: officialEdd || current.expected_delivery_date || estimatedDeliveryDate,
       gestational_weeks: gestationalAge.weeks,
       gestational_days: gestationalAge.days,
     }));
-  }, [isPrenatal, form.lmp_date, form.consultation_date]);
+  }, [isPrenatal, form.lmp_date, form.consultation_date, form.patient_id, pregnancyContext]);
 
   useEffect(() => {
     if (!isPrenatal) return;
@@ -486,8 +593,16 @@ export default function Consultations() {
     .slice(0, 8);
 
   const selectPatient = (patient) => {
+    if (String(form.patient_id) !== String(patient.id)) {
+      pendingCase.current = null;
+      touchedHistoryFields.current = new Set();
+      setPrescription({ issued_date: today(), diagnosis: "", notes: "", items: [{ ...blankMedicine }] });
+      setLaboratory({ requested_date: today(), indication: "", notes: "", items: [], other_test: "" });
+    }
     setForm((currentForm) => ({
-      ...currentForm,
+      ...(String(currentForm.patient_id) === String(patient.id) ? currentForm : {
+        ...createInitialForm(String(patient.id)), service_id: currentForm.service_id, service_type: currentForm.service_type,
+      }),
       patient_id: String(patient.id),
     }));
 
@@ -496,8 +611,12 @@ export default function Consultations() {
   };
 
   const clearSelectedPatient = () => {
+    pendingCase.current = null;
+    touchedHistoryFields.current = new Set();
     setForm((currentForm) => ({
-      ...currentForm,
+      ...createInitialForm(""),
+      service_id: currentForm.service_id,
+      service_type: currentForm.service_type,
       patient_id: "",
     }));
 
@@ -506,9 +625,11 @@ export default function Consultations() {
   };
 
   const set = (key) => (event) => {
+    touchedHistoryFields.current.add(key);
     setForm((currentForm) => ({
       ...currentForm,
       [key]: event.target.value,
+      ...(key === "lmp_date" ? { expected_delivery_date: calculateEstimatedDeliveryDate(event.target.value) } : {}),
     }));
   };
 
@@ -616,6 +737,7 @@ export default function Consultations() {
   const submit = async (event) => {
     event.preventDefault();
 
+    if (saving || historyLoading || pregnancyLoading || (editCaseId && (!editingCase || editLoadFailed))) return;
     setSaving(true);
     setResult("");
 
@@ -633,7 +755,9 @@ export default function Consultations() {
       }
 
       if (isPrenatal) {
-        if (!form.lmp_date) {
+        if (pregnancyContext.error) throw new Error(pregnancyContext.error);
+        if (!form.service_id) throw new Error("Select an active prenatal service before saving.");
+        if (!form.lmp_date && !pregnancyContext.pregnancy?.official_edd) {
           throw new Error(
             "Last menstrual period is required for a prenatal consultation.",
           );
@@ -668,6 +792,7 @@ export default function Consultations() {
 
       const body = {
         ...form,
+        pregnancy_id: isPrenatal ? pregnancyContext.pregnancy?.id : undefined,
         service_fee: undefined,
 
         patient_id: Number(
@@ -700,23 +825,29 @@ export default function Consultations() {
         diagnoses,
       };
 
-      const record = await api(
-        "/cases",
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        },
-      );
+      if (editCaseId) {
+        delete body.service_type;
+        delete body.service_id;
+        delete body.appointment_id;
+      }
+      const updatingId = editCaseId || pendingCase.current?.id;
+      if (updatingId) { delete body.service_type; delete body.service_id; delete body.appointment_id; }
+      const savedCase = await api(updatingId ? `/cases/${updatingId}` : "/cases", {
+        method: updatingId ? "PATCH" : "POST", body: JSON.stringify(body),
+      });
+      const record = editCaseId ? editingCase : pendingCase.current || savedCase;
+      if (!editCaseId) pendingCase.current = record;
 
       let prenatalRecord = null;
 
       if (isPrenatal) {
         prenatalRecord = await api(
-          "/prenatal-records",
+          editCaseId && editingCase?.prenatal_record?.id ? `/prenatal-records/${editingCase.prenatal_record.id}` : "/prenatal-records",
           {
-            method: "POST",
+            method: editCaseId && editingCase?.prenatal_record?.id ? "PUT" : "POST",
             body: JSON.stringify({
               patient_id: Number(form.patient_id),
+              pregnancy_id: pregnancyContext.pregnancy?.id || record.pregnancy_id,
               consultation_case_id: record.id,
               appointment_id:
                 form.appointment_id ||
@@ -788,7 +919,8 @@ export default function Consultations() {
                 form.fetal_presentation || null,
               edema: form.edema || null,
               risk_level:
-                form.risk_level || "Low Risk",
+                editingCase?.prenatal_record?.risk_level || form.risk_level || "Low Risk",
+              risk_reasons: form.risk_reasons,
               assessment:
                 diagnoses.join(", ") || null,
               treatment:
@@ -805,6 +937,14 @@ export default function Consultations() {
           },
         );
       }
+
+      if (editCaseId && prenatalRecord) {
+        setEditingCase((current) => ({ ...current, prenatal_record: {
+          ...current.prenatal_record,
+          id: current.prenatal_record?.id || prenatalRecord.id,
+        } }));
+      }
+
 
       const medicineItems =
         prescription.items
@@ -856,6 +996,7 @@ export default function Consultations() {
             items: medicineItems,
           }),
         });
+        setPrescription({ issued_date: today(), diagnosis: "", notes: "", items: [{ ...blankMedicine }] });
       }
 
       const labItems = [
@@ -909,8 +1050,10 @@ export default function Consultations() {
         );
       }
 
+      if (labItems.length) setLaboratory({ requested_date: today(), indication: "", notes: "", items: [], other_test: "" });
+
       if (
-        appointmentIdFromUrl &&
+        !editCaseId && appointmentIdFromUrl &&
         appointment
       ) {
         await api(
@@ -964,15 +1107,13 @@ export default function Consultations() {
         }.`,
       );
 
-      localStorage.removeItem(
-        CONSULTATION_DRAFT_KEY,
-      );
+      if (!editCaseId) localStorage.removeItem(draftKey);
 
       setTimeout(() => {
-        if (isPrenatal) {
+        if (isPrenatal && !editCaseId) {
           navigate(
-            `/prenatal-records?patient=${form.patient_id}&record=${
-              prenatalRecord?.id || ""
+            `/prenatal-records?patient=${form.patient_id}&pregnancy=${
+              prenatalRecord?.pregnancy_id || record.pregnancy_id || ""
             }`,
           );
           return;
@@ -998,6 +1139,7 @@ export default function Consultations() {
 
       <input
         type={type}
+        readOnly={key === "lmp_date" && Boolean(pregnancyContext.pregnancy)}
         value={form[key]}
         onChange={set(key)}
         min={options.min}
@@ -1069,10 +1211,25 @@ export default function Consultations() {
         </header>
 
         <main className="px-4 pb-8 sm:px-6">
+          {editCaseId && editingCase && <section className="mx-auto mb-6 max-w-6xl rounded-3xl bg-white p-6 shadow-sm">
+            <h2 className="font-bold text-slate-800">Existing prescriptions and laboratory requests</h2>
+            <p className="mt-1 text-sm text-slate-500">Add any new medicines or tests in the form below. Existing documents and lab results remain in this consultation.</p>
+            <div className="mt-3 space-y-2 text-sm text-slate-700">
+              {(editingCase.prescriptions || []).map((rx) => <p key={`rx-${rx.id}`}><strong>{rx.prescription_number}:</strong> {rx.items?.map((item) => [item.medicine_name, item.dosage, item.frequency, item.duration, item.instructions].filter(Boolean).join(" ? ")).join("; ")}</p>)}
+              {(editingCase.laboratory_requests || []).map((lab) => <p key={`lab-${lab.id}`}><strong>{lab.request_number}:</strong> {lab.items?.map((item) => item.test_name).join(", ")}</p>)}
+            </div>
+          </section>}
           <form
             onSubmit={submit}
-            className="mx-auto max-w-6xl space-y-6"
+            className="consultation-form mx-auto max-w-6xl space-y-6"
           >
+            {!editCaseId && form.patient_id && <div role="status" className="rounded-2xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-800">
+              {historyLoading ? "Loading the patient's most recent consultation..." : historyStatus.error || (
+                previousConsultation && String(previousConsultation.patient_id) === String(form.patient_id)
+                  ? <><strong>History from {previousConsultation.case_number}</strong> ({previousConsultation.consultation_date?.replace("T", " ")}). Review the pre-filled history for this visit. <Link to={`/cases/${previousConsultation.id}`} className="font-semibold underline">View previous consultation</Link></>
+                  : "No previous consultation found. Enter the details for this visit."
+              )}
+            </div>}
             <section className="rounded-3xl bg-white p-6 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-teal-50 p-3">
@@ -1081,7 +1238,7 @@ export default function Consultations() {
 
                 <div>
                   <h2 className="text-xl font-bold text-slate-800">
-                    Consultation
+                    {editCaseId ? `Edit consultation ${editingCase?.case_number || ""}` : "Consultation"}
                   </h2>
 
                   <p className="text-sm text-slate-500">
@@ -1160,13 +1317,13 @@ export default function Consultations() {
                     type="text"
                     value={patientSearch}
                     disabled={Boolean(
-                      appointmentIdFromUrl,
+                      appointmentIdFromUrl || editCaseId,
                     )}
                     placeholder="Search by patient name or patient number"
                     autoComplete="off"
                     onFocus={() => {
                       if (
-                        !appointmentIdFromUrl
+                        !appointmentIdFromUrl && !editCaseId
                       ) {
                         setShowPatientResults(
                           true,
@@ -1186,7 +1343,7 @@ export default function Consultations() {
                   />
                 </div>
 
-                {!appointmentIdFromUrl &&
+                {!appointmentIdFromUrl && !editCaseId &&
                   showPatientResults && (
                     <div className="absolute z-30 mt-2 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
                       {filteredPatients.length >
@@ -1306,7 +1463,7 @@ export default function Consultations() {
                   )}
 
                   {selectedPatient &&
-                    !appointmentIdFromUrl && (
+                    !appointmentIdFromUrl && !editCaseId && (
                       <button
                         type="button"
                         onClick={
@@ -1333,30 +1490,30 @@ export default function Consultations() {
   />
 
   <select
+    disabled={Boolean(editCaseId)}
     value={form.service_id}
     onChange={(event) => {
-      setForm((current) => ({
-        ...current,
-        service_id: event.target.value,
-        service_type: serviceTypes.find((service) => String(service.id) === event.target.value)?.service_name || "",
-      }));
+      const serviceId = event.target.value;
+      setForm((current) => {
+        const next = { ...current, service_id: serviceId,
+          service_type: serviceTypes.find((service) => String(service.id) === serviceId)?.service_name || "" };
+        return !editCaseId && previousConsultation && String(previousConsultation.patient_id) === String(current.patient_id)
+          ? prefillConsultation(next, { ...previousConsultation, prenatal_record: null }, touchedHistoryFields.current) : next;
+      });
     }}
     className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-semibold outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
   >
     <option value="">Select service</option>
+    {editCaseId && !serviceTypes.some((service) => String(service.id) === String(form.service_id)) && <option value={form.service_id}>{form.service_type}</option>}
 
    {serviceTypes.filter((service) => service.service_name.toLowerCase().includes(serviceSearch.trim().toLowerCase())).map((service) => (
   <option key={service.id} value={service.id}>
-    {service.service_name} — {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(service.price || 0)}
+    {service.service_name}
   </option>
 ))}
   </select>
 
-  {form.service_id && (
-    <span className="mt-2 block text-sm font-semibold text-teal-700">
-      Service fee: {new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(serviceTypes.find((service) => String(service.id) === String(form.service_id))?.price || 0)}
-    </span>
-  )}
+
 
   {!serviceTypes.length && (
     <span className="mt-1 block text-xs text-amber-600">
@@ -1463,6 +1620,12 @@ export default function Consultations() {
 
               {isPrenatal && (
                 <section className="mt-7 rounded-3xl border border-pink-100 bg-pink-50/50 p-5">
+                  {form.patient_id && <div role="status" className="mb-4 rounded-xl bg-white p-3 text-sm text-slate-700">
+                    {pregnancyLoading ? "Loading current pregnancy..." : pregnancyContext.error || (pregnancyContext.pregnancy
+                      ? `This visit will be saved under ${pregnancyContext.pregnancy.pregnancy_number}. Official EDD source: ${pregnancyContext.pregnancy.edd_source}.`
+                      : "A new pregnancy record will be created with this first visit.")}
+                    {!pregnancyLoading && <Link className="ml-2 font-semibold text-pink-700 underline" to={pregnancyContext.pregnancy ? `/prenatal-records?pregnancy=${pregnancyContext.pregnancy.id}` : `/prenatal-records?patient=${form.patient_id}`}>Review pregnancy / correct dates</Link>}
+                  </div>}
                   <div className="flex items-center gap-3">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">
                       🤰
@@ -1484,7 +1647,7 @@ export default function Consultations() {
                       "lmp_date",
                       "Last menstrual period (LMP)",
                       "date",
-                      { required: true },
+                      { required: !pregnancyContext.pregnancy?.official_edd },
                     )}
 
                     <label className="text-sm font-medium text-slate-600">
@@ -1496,7 +1659,7 @@ export default function Consultations() {
                         className="mt-1 w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-slate-700"
                       />
                       <span className="mt-1 block text-xs text-slate-500">
-                        Automatically estimated as 280 days from the LMP.
+                        Loaded from the previous visit when available; recalculated when the LMP changes.
                       </span>
                     </label>
 
@@ -1758,14 +1921,7 @@ export default function Consultations() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={addMedicine}
-                  className="inline-flex items-center gap-2 rounded-xl border border-pink-200 px-4 py-2 text-sm font-semibold text-pink-600 hover:bg-pink-50"
-                >
-                  <Plus size={16} />
-                  Add medicine
-                </button>
+
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -1889,6 +2045,17 @@ export default function Consultations() {
                 )}
               </div>
 
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={addMedicine}
+                  className="inline-flex items-center gap-2 rounded-xl border border-pink-200 px-4 py-2 text-sm font-semibold text-pink-600 hover:bg-pink-50"
+                >
+                  <Plus size={16} />
+                  Add medicine
+                </button>
+              </div>
+
               <label className="mt-5 block text-sm font-medium text-slate-600">
                 Prescription notes
 
@@ -1954,18 +2121,18 @@ export default function Consultations() {
                 </label>
               </div>
 
-              <div className="mt-6 space-y-5">
+              <div className="mt-4 space-y-3">
                 {laboratoryProcedures.map(
                   (group) => (
                     <div
                       key={group.category}
-                      className="rounded-2xl border border-slate-200 p-4"
+                      className="rounded-2xl border border-slate-200 p-3"
                     >
                       <h3 className="font-bold text-slate-700">
                         {group.category}
                       </h3>
 
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                         {group.tests.map(
                           (testName) => {
                             const checked =
@@ -1982,7 +2149,7 @@ export default function Consultations() {
                                 key={
                                   testName
                                 }
-                                className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm transition ${
+                                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition ${
                                   checked
                                     ? "border-blue-300 bg-blue-50 text-blue-800"
                                     : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/50"
@@ -1998,7 +2165,7 @@ export default function Consultations() {
                                       testName,
                                     )
                                   }
-                                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                 />
 
                                 <span className="font-medium">
@@ -2090,11 +2257,9 @@ export default function Consultations() {
 
             <div className="flex flex-wrap justify-end gap-3">
               <Link
-                to="/appointments"
+                to={editCaseId ? `/cases/${editCaseId}` : prenatalFromUrl ? "/prenatal-records" : "/appointments"}
                 onClick={() =>
-                  localStorage.removeItem(
-                    CONSULTATION_DRAFT_KEY,
-                  )
+                  !editCaseId && localStorage.removeItem(draftKey)
                 }
                 className="rounded-xl px-5 py-3 font-medium text-slate-600 hover:bg-slate-100"
               >
@@ -2103,14 +2268,14 @@ export default function Consultations() {
 
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || historyLoading || pregnancyLoading || (isPrenatal && Boolean(pregnancyContext.error)) || (Boolean(editCaseId) && (!editingCase || editLoadFailed))}
                 className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-3 font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Plus size={18} />
 
                 {saving
                   ? "Saving all records..."
-                  : "Save consultation and requests"}
+                  : editCaseId ? "Save changes and new requests" : "Save consultation and requests"}
               </button>
             </div>
           </form>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, KeyRound, PackagePlus, Pencil, Pill, Plus, ReceiptText, Save, ShieldCheck, Stethoscope, Trash2, UserRound, Wrench, X } from "lucide-react";
+import { Building2, DatabaseBackup, KeyRound, PackagePlus, Pencil, Pill, Plus, ReceiptText, Save, ShieldCheck, Stethoscope, Trash2, UserRound, Wrench, X } from "lucide-react";
+import BackupRestore from "./BackupRestore";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 
@@ -29,6 +30,7 @@ export default function Tools() {
     ["services", "Service Management", Stethoscope], ["inventory", "Medicine Inventory", Pill],
     ["charges", "Charge Types", ReceiptText],
     ["clinic", "Clinic Details", Building2], ["account", "Profile & Security", UserRound],
+    ["backups", "Backup / Restore", DatabaseBackup],
   ];
   return <div className="flex min-h-screen bg-slate-50">
     <Sidebar activeItem="Tools" />
@@ -52,6 +54,7 @@ export default function Tools() {
             {tab === "charges" && <Charges items={data.chargeTypes || []} reload={load} show={show} />}
             {tab === "clinic" && <Clinic settings={data.settings} reload={load} show={show} />}
             {tab === "account" && <Account profile={profile} setProfile={setProfile} show={show} />}
+            {tab === "backups" && <BackupRestore embedded />}
           </>}</section>
         </div>
       </main>

@@ -13,6 +13,8 @@ import {
   X,
 } from "lucide-react";
 
+import BillingHistory from "../components/BillingHistory";
+import { printStatementOfAccount } from "../utils/print";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 import { Link } from "react-router-dom";
@@ -137,7 +139,7 @@ export default function Billing() {
         setBillingFocus({
           ...detail,
           patient_name:
-            `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+            detail.patient_name || `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
         });
       }
     } catch (err) {
@@ -202,7 +204,7 @@ export default function Billing() {
     try {
       detailedInvoice = await api(`/invoices/${invoice.id}/details`);
       detailedInvoice.patient_name =
-        `${detailedInvoice.first_name || ""} ${detailedInvoice.last_name || ""}`.trim();
+        detailedInvoice.patient_name || `${detailedInvoice.first_name || ""} ${detailedInvoice.last_name || ""}`.trim();
     } catch (err) {
       setError(err.message);
     }
@@ -245,7 +247,7 @@ export default function Billing() {
       setBillingFocus({
         ...detail,
         patient_name:
-          `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+          detail.patient_name || `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
       });
     } catch (err) {
       setError(err.message);
@@ -366,17 +368,7 @@ export default function Billing() {
       setError("");
       setMessage("");
 
-      await api(
-        `/invoices/${selectedInvoice.id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            total_amount: enteredTotal,
-          }),
-        },
-      );
-
-      await api(
+      const paymentResult = await api(
         `/invoices/${selectedInvoice.id}/payments`,
         {
           method: "POST",
@@ -401,7 +393,9 @@ export default function Billing() {
 
       const completedTransaction = {
         ...selectedInvoice,
-        total_amount: enteredTotal,
+        ...paymentResult.invoice,
+        receipt_number: paymentResult.receipt_number,
+        total_amount: paymentResult.invoice.total_amount,
         paid_amount: updatedPaid,
         payment_status: updatedStatus,
         payment_amount: enteredPayment,
@@ -422,7 +416,7 @@ export default function Billing() {
       setMessage(
         `Payment of ${formatCurrency(
           enteredPayment,
-        )} recorded successfully.`,
+        )} recorded successfully. OR: ${paymentResult.receipt_number}`,
       );
 
       setPaymentAmount(
@@ -441,14 +435,7 @@ export default function Billing() {
 
       await loadBillings();
 
-      if (updatedStatus === "Paid") {
-        setShowCashier(false);
-        setSelectedInvoice(null);
-        setBillingFocus(null);
-        setTotalAmount("");
-        setPaymentAmount("");
-        setMessage("");
-      }
+      setBillingFocus(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -505,7 +492,7 @@ export default function Billing() {
       const refreshed = {
         ...detail,
         patient_name:
-          `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
+          detail.patient_name || `${detail.first_name || ""} ${detail.last_name || ""}`.trim(),
       };
       setSelectedInvoice(refreshed);
       setBillingFocus(refreshed);
@@ -523,7 +510,7 @@ export default function Billing() {
   };
 
   const printReceipt = () => {
-    if (!selectedInvoice) {
+    if (!selectedInvoice?.receipt_number) {
       return;
     }
 
@@ -566,7 +553,7 @@ export default function Billing() {
         <head>
           <title>
             Receipt ${
-              selectedInvoice.invoice_number ||
+              selectedInvoice.receipt_number ||
               ""
             }
           </title>
@@ -698,12 +685,12 @@ export default function Billing() {
               <div class="details">
                 <div class="item">
                   <div class="label">
-                    Invoice number
+                    OR number
                   </div>
 
                   <div class="value">
                     ${
-                      selectedInvoice.invoice_number ||
+                      selectedInvoice.receipt_number ||
                       "—"
                     }
                   </div>
@@ -846,26 +833,7 @@ export default function Billing() {
     receiptWindow.document.close();
   };
 
-  const printStatement = () => {
-    if (!selectedInvoice) return;
-    const win = window.open("", "_blank", "width=900,height=900");
-    if (!win) return;
-    const rows = (selectedInvoice.items || []).map((item) => `<tr>
-      <td>${item.description}</td><td>${item.category}</td><td>${item.quantity}</td>
-      <td>${formatCurrency(item.unit_price)}</td><td>${formatCurrency(item.item_discount)}</td>
-      <td>${formatCurrency(item.final_amount)}</td></tr>`).join("");
-    win.document.write(`<!doctype html><html><head><title>${selectedInvoice.invoice_number}</title>
-      <style>@page{size:A4;margin:12mm}body{font:12px Arial;color:#1e293b}.head{padding:18px;color:white;background:#db2777}h1{margin:0}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{padding:9px;border-bottom:1px solid #ddd;text-align:left}.summary{margin:20px 0 0 auto;width:280px}.summary p{display:flex;justify-content:space-between}.sign{display:flex;justify-content:space-between;margin-top:60px}.sign div{width:42%;border-top:1px solid;padding-top:7px;text-align:center}</style>
-      </head><body><div class="head"><h1>${selectedInvoice.clinic_name || "OB-GYN Clinic"}</h1><p>${selectedInvoice.clinic_address || ""}</p></div>
-      <h2>Statement of Account — ${selectedInvoice.invoice_number}</h2>
-      <p><b>Patient:</b> ${selectedInvoice.patient_name || ""} (${selectedInvoice.patient_number || ""})</p>
-      <p><b>Case:</b> ${selectedInvoice.case_number || "Miscellaneous"} &nbsp; <b>Service:</b> ${selectedInvoice.service_type || "—"}</p>
-      <table><thead><tr><th>Description</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Final</th></tr></thead><tbody>${rows || "<tr><td colspan='6'>No itemized charges.</td></tr>"}</tbody></table>
-      <div class="summary"><p><span>Grand Total</span><b>${formatCurrency(selectedInvoice.grand_total || selectedInvoice.total_amount)}</b></p><p><span>Amount Paid</span><b>${formatCurrency(selectedInvoice.paid_amount)}</b></p><p><span>Remaining Balance</span><b>${formatCurrency(Math.max(0,Number(selectedInvoice.grand_total || selectedInvoice.total_amount || 0)-Number(selectedInvoice.paid_amount || 0)))}</b></p><p><span>Status</span><b>${selectedInvoice.payment_status}</b></p></div>
-      <div class="sign"><div>Prepared By</div><div>Received By / Patient Signature</div></div>
-      <script>window.onload=()=>window.print()</script></body></html>`);
-    win.document.close();
-  };
+  const printStatement = () => { if (selectedInvoice) printStatementOfAccount(selectedInvoice); };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -1030,6 +998,8 @@ export default function Billing() {
               </div>
             </aside>
           </section>
+
+          <BillingHistory rows={rows} />
 
           <section className="hidden">
             <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
@@ -1706,6 +1676,7 @@ export default function Billing() {
               )}
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <p className="self-center text-sm font-semibold">OR number: {selectedInvoice.receipt_number || "Generated after payment"}</p>
                 <button type="button" onClick={printStatement}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-pink-600 px-5 py-3 font-semibold text-white">
                   <Printer size={18} /> Print Statement
@@ -1722,7 +1693,7 @@ export default function Billing() {
                   type="button"
                   onClick={printReceipt}
                   disabled={
-                    !selectedInvoice.payment_amount
+                    !selectedInvoice.receipt_number
                   }
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >

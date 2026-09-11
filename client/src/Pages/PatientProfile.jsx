@@ -14,6 +14,7 @@ import {
   useParams,
 } from "react-router-dom";
 
+import BillingHistory from "../components/BillingHistory";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 import { printCase } from "../utils/print";
@@ -27,7 +28,6 @@ const blankForm = {
   birth_date: "",
   civil_status: "",
   occupation: "",
-  contact_number: "",
   address: "",
   blood_type: "",
   allergies: "",
@@ -36,8 +36,6 @@ const blankForm = {
   family_history: "",
   ob_history: "",
   pregnancy_history: "",
-  emergency_contact_name: "",
-  emergency_contact_number: "",
   notes: "",
 };
 
@@ -124,8 +122,6 @@ export default function PatientProfile() {
         patient.civil_status || "",
       occupation:
         patient.occupation || "",
-      contact_number:
-        patient.contact_number || "",
       address:
         patient.address || "",
       blood_type:
@@ -142,11 +138,6 @@ export default function PatientProfile() {
         patient.ob_history || "",
       pregnancy_history:
         patient.pregnancy_history || "",
-      emergency_contact_name:
-        patient.emergency_contact_name || "",
-      emergency_contact_number:
-        patient.emergency_contact_number ||
-        "",
       notes:
         patient.notes || "",
     });
@@ -316,24 +307,12 @@ export default function PatientProfile() {
       patient.occupation,
     ],
     [
-      "Contact",
-      patient.contact_number,
-    ],
-    [
       "Blood type",
       patient.blood_type,
     ],
     [
       "Address",
       patient.address,
-    ],
-    [
-      "Emergency contact",
-      patient.emergency_contact_name,
-    ],
-    [
-      "Emergency contact number",
-      patient.emergency_contact_number,
     ],
     [
       "Allergies",
@@ -588,21 +567,7 @@ export default function PatientProfile() {
             </div>
           </section>
 
-          <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
-            <h2 className="text-xl font-bold">Billing History</h2>
-            <p className="text-sm text-slate-500">Complete invoices and outstanding balances for this patient.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-4">
-              {[
-                ["Total billed", billing.summary?.totalBilled],
-                ["Total paid", billing.summary?.totalPaid],
-                ["Outstanding", billing.summary?.outstanding],
-                ["Unpaid bills", billing.summary?.unpaidBills],
-              ].map(([label,value],index)=><div key={label} className="rounded-2xl bg-slate-50 p-3"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-bold">{index===3?value||0:new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP"}).format(value||0)}</p></div>)}
-            </div>
-            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-200 text-left"><thead><tr className="border-b text-xs uppercase text-slate-400"><th className="p-3">Invoice</th><th>Date / Service</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th/></tr></thead><tbody>
-              {billing.rows?.length?billing.rows.map(invoice=>{const total=Number(invoice.grand_total||invoice.total_amount||0),paid=Number(invoice.paid_amount||0);return <tr key={invoice.id} className="border-b border-slate-100"><td className="p-3 font-bold text-pink-600">{invoice.invoice_number}</td><td>{String(invoice.consultation_date||invoice.invoice_date).slice(0,10)}<small className="block text-slate-400">{invoice.service_type||"Miscellaneous"}</small></td><td>{new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP"}).format(total)}</td><td>{new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP"}).format(paid)}</td><td>{new Intl.NumberFormat("en-PH",{style:"currency",currency:"PHP"}).format(Math.max(0,total-paid))}</td><td>{invoice.payment_status}</td><td><Link to="/billing" className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm"><Eye size={15}/>View Invoice</Link></td></tr>}):<tr><td colSpan="7" className="p-8 text-center text-slate-400">No billing records.</td></tr>}
-            </tbody></table></div>
-          </section>
+          <BillingHistory rows={(billing.rows || []).map(invoice => ({...invoice, patient_name:[patient.first_name,patient.middle_name,patient.last_name].filter(Boolean).join(" "),patient_number:patient.patient_number}))} />
         </main>
       </div>
 
@@ -660,10 +625,23 @@ export default function PatientProfile() {
                 "date",
               )}
 
-              {inputField(
-                "civil_status",
-                "Civil status",
-              )}
+              <label className="text-sm font-medium text-slate-600">
+                Civil status
+
+                <select
+                  name="civil_status"
+                  value={form.civil_status}
+                  onChange={handleChange}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
+                >
+                  <option value="">Select civil status</option>
+                  <option value="Single">Single</option>
+                  <option value="Married">Married</option>
+                  <option value="Widowed">Widowed</option>
+                  <option value="Separated">Separated</option>
+                  <option value="Divorced">Divorced</option>
+                </select>
+              </label>
 
               {inputField(
                 "occupation",
@@ -671,23 +649,8 @@ export default function PatientProfile() {
               )}
 
               {inputField(
-                "contact_number",
-                "Contact number",
-              )}
-
-              {inputField(
                 "blood_type",
                 "Blood type",
-              )}
-
-              {inputField(
-                "emergency_contact_name",
-                "Emergency contact",
-              )}
-
-              {inputField(
-                "emergency_contact_number",
-                "Emergency contact number",
               )}
             </div>
 

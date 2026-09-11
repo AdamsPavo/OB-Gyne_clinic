@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { getCurrentUser } from "../auth";
+import Sidebar from "./Sidebar";
 import Appointments from "../Pages/Appointments";
 import BackupRestore from "../Pages/BackupRestore";
 import Billing from "../Pages/Billing";
@@ -59,7 +60,7 @@ const definitions = [
   { match: /^\/laboratory-requests$/, path: "/laboratory-requests", title: "Laboratory Requests", icon: ClipboardPlus, roles: ["admin", "doctor"], element: <ClinicModule moduleName="Laboratory Requests" /> },
   { match: /^\/(tools|settings)$/, path: "/tools", title: "Tools", icon: Settings2, roles: ["admin", "doctor"], element: <Tools /> },
   { match: /^\/inventory$/, path: "/inventory", title: "Inventory", icon: Package, element: <Inventory /> },
-  { match: /^\/patient-charges$/, path: "/patient-charges", title: "Patient Charges", icon: ReceiptText, element: <PatientCharges /> },
+  { match: /^\/patient-charges$/, path: "/patient-charges", title: "Other Charges", icon: ReceiptText, element: <PatientCharges /> },
   { match: /^\/users$/, path: "/users", title: "User Management", icon: UserCog, roles: ["admin", "doctor"], element: <UserManagement /> },
 ];
 
@@ -159,33 +160,46 @@ export default function Workspace() {
     setTabs((current) => {
       const index = current.findIndex((tab) => tab.id === tabId);
       const next = current.filter((tab) => tab.id !== tabId);
-      if (tabId === activeTabId) setActiveTabId(next[Math.max(0, index - 1)]?.id || "/dashboard");
-      return next;
+
+      if (tabId === activeTabId) {
+        const nextTab = next[Math.max(0, index - 1)] || next[0] || createTab("/dashboard");
+        setActiveTabId(nextTab.id);
+        outerNavigate(nextTab.path);
+      }
+
+      return next.length ? next : [createTab("/dashboard")];
     });
-  }, [activeTabId]);
+  }, [activeTabId, outerNavigate]);
 
   const contextValue = useMemo(() => ({ openTab }), [openTab]);
 
   if (!localStorage.getItem("obgyn_token") || !user) return <Navigate to="/" replace />;
 
+  const activeItem = tabs.find((tab) => tab.id === activeTabId)?.title || "Dashboard";
+
   return (
     <WorkspaceContext.Provider value={contextValue}>
-      <div className="flex min-h-screen flex-col bg-slate-50">
-        <nav aria-label="Open workspace tabs" className="sticky top-0 z-[100] flex h-12 shrink-0 items-end overflow-x-auto border-b border-slate-300 bg-slate-200 px-2 pt-1 shadow-sm">
-          <div className="flex h-full min-w-max items-end gap-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = tab.id === activeTabId;
-              return <button key={tab.id} type="button" onClick={() => activateTab(tab)} className={`group flex h-10 max-w-60 items-center gap-2 rounded-t-xl border border-b-0 px-3 text-sm font-semibold transition ${active ? "border-slate-300 bg-white text-slate-800 shadow-sm" : "border-transparent bg-slate-300/70 text-slate-600 hover:bg-slate-100"}`}>
-                <Icon size={16} className={active ? "text-pink-600" : "text-slate-500"} />
-                <span className="truncate">{tab.title}</span>
-                {!tab.permanent && <span role="button" tabIndex={0} aria-label={`Close ${tab.title}`} onClick={(event) => closeTab(event, tab.id)} onKeyDown={(event) => event.key === "Enter" && closeTab(event, tab.id)} className="ml-1 rounded-md p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><X size={15} /></span>}
-              </button>;
-            })}
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar activeItem={activeItem} managed />
+
+        <div className="min-w-0 flex-1">
+          <nav aria-label="Open workspace tabs" className="sticky top-0 z-100 flex h-12 shrink-0 items-end overflow-x-auto border-b border-slate-300 bg-slate-200 px-2 pt-1 shadow-sm">
+            <div className="flex h-full min-w-max items-end gap-1">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const active = tab.id === activeTabId;
+                return <button key={tab.id} type="button" onClick={() => activateTab(tab)} className={`group flex h-10 max-w-60 items-center gap-2 rounded-t-xl border border-b-0 px-3 text-sm font-semibold transition ${active ? "border-slate-300 bg-white text-slate-800 shadow-sm" : "border-transparent bg-slate-300/70 text-slate-600 hover:bg-slate-100"}`}>
+                  <Icon size={16} className={active ? "text-pink-600" : "text-slate-500"} />
+                  <span className="truncate">{tab.title}</span>
+                  {!tab.permanent && <span role="button" tabIndex={0} aria-label={`Close ${tab.title}`} onClick={(event) => closeTab(event, tab.id)} onKeyDown={(event) => event.key === "Enter" && closeTab(event, tab.id)} className="ml-1 rounded-md p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><X size={15} /></span>}
+                </button>;
+              })}
+            </div>
+          </nav>
+
+          <div className="flex min-h-0 flex-1">
+            {tabs.map((tab) => <MountedTab key={tab.id} tab={tab} active={tab.id === activeTabId} />)}
           </div>
-        </nav>
-        <div className="flex min-h-0 flex-1">
-          {tabs.map((tab) => <MountedTab key={tab.id} tab={tab} active={tab.id === activeTabId} />)}
         </div>
       </div>
     </WorkspaceContext.Provider>

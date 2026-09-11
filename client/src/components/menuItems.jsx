@@ -12,5 +12,5 @@ export const menuItems = [
   { name: "Reports", path: "/reports", icon: <FileBarChart size={19} /> },
   { name: "Tools", path: "/tools", icon: <Wrench size={19} /> },
   { name: "Inventory", path: "/inventory", icon: <Boxes size={19} /> },
-  { name: "Patient Charges", path: "/patient-charges", icon: <ReceiptText size={19} /> },
+  { name: "Other Charges", path: "/patient-charges", icon: <ReceiptText size={19} /> },
 ];

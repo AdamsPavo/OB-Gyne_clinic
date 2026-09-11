@@ -150,6 +150,7 @@ CREATE TABLE consultation_cases (
 
   treatment TEXT NULL,
   doctor_notes TEXT NULL,
+  lab_results TEXT NULL,
   follow_up_date DATE NULL,
 
   case_status ENUM(
@@ -561,8 +562,34 @@ CREATE TABLE backup_logs (
 -- =========================================================
 -- preNATAL RECORDS
 -- =========================================================
+CREATE TABLE pregnancy_records (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    pregnancy_number VARCHAR(30) UNIQUE,
+    patient_id BIGINT UNSIGNED NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'Active',
+    lmp_date DATE, ultrasound_edd DATE, manual_edd DATE,
+    edd_source VARCHAR(20) NOT NULL DEFAULT 'LMP',
+    gravida INT, para INT, abortion_count INT, living_children INT,
+    doctor_id BIGINT UNSIGNED NULL,
+    maternal_history TEXT, risk_level VARCHAR(30), risk_reasons TEXT,
+    risk_reviewed_at DATETIME, risk_reviewed_by BIGINT UNSIGNED,
+    actual_delivery_date DATE, delivery_location TEXT, delivery_mode VARCHAR(100),
+    delivery_complications TEXT, baby_sex VARCHAR(50), birth_weight_kg DECIMAL(6,3),
+    birth_outcome TEXT, apgar TEXT, maternal_outcome TEXT, delivery_notes TEXT,
+    closed_date DATE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    active_patient_id BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status='Active' THEN patient_id ELSE NULL END) STORED,
+    UNIQUE KEY one_active_pregnancy_per_patient (active_patient_id),
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    FOREIGN KEY (doctor_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE prenatal_records (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    pregnancy_id BIGINT UNSIGNED NULL,
+    official_edd DATE,
+    edd_source VARCHAR(20),
+    FOREIGN KEY (pregnancy_id) REFERENCES pregnancy_records(id),
 
     consultation_case_id BIGINT UNSIGNED NOT NULL,
     patient_id BIGINT UNSIGNED NOT NULL,

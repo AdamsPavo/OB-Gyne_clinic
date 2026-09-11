@@ -3,8 +3,22 @@ const db = require("../database/database");
 const fs = require("fs");
 const path = require("path");
 
+const { validateMedicalCertificate } = require("../services/medicalCertificate");
 const router = express.Router();
+const { savePrenatalVisit } = require("../services/pregnancies");
+router.use(require("./pregnancies")(db));
 const text = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
+const billingIdentity = record => {
+  if (record.patient_number !== "OPD-WALK-IN") return {...record, case_number:record.case_number || (!record.consultation_case_id ? "OPD Walk-in" : record.case_number)};
+  const invoiceId = record.invoice_id || record.id;
+  const invoice = db.prepare("SELECT recipient_name FROM invoices WHERE id=?").get(invoiceId);
+  const certificates = db.prepare("SELECT certificate FROM patient_charges WHERE invoice_id=? AND certificate IS NOT NULL ORDER BY id").all(invoiceId);
+  let recipient = invoice?.recipient_name;
+  for (const row of certificates) { if (!recipient) { try { recipient = JSON.parse(row.certificate)?.recipient_name; } catch { /* Old invalid document. */ } } }
+  return {...record, patient_name:recipient || "Name not recorded", case_number:"OPD Walk-in"};
+};
+const normalizePatientName = (value) => typeof value === "string"
+  ? value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase() : "";
 const cents = (value) => Math.max(0, Math.round((Number(value) || 0) * 100));
 const amount = (value) => Number((Number(value || 0) / 100).toFixed(2));
 
@@ -176,69 +190,113 @@ router.delete("/tools/charge-types/:id", (req, res) => {
 router.get("/patient-charges", (req, res) => {
   const params=[],where=[];
   if(req.query.patient_id){where.push("pc.patient_id=?");params.push(req.query.patient_id);}
-  const rows=db.prepare(`SELECT pc.*,ct.name charge_name,ct.category,
-    p.patient_number,p.first_name||' '||p.last_name patient_name,
+  const rows=db.prepare(`SELECT pc.*,COALESCE(ii.item_name,ct.name) charge_name,ct.category,
+    p.patient_number,trim(p.first_name||' '||COALESCE(NULLIF(p.middle_name,'')||' ','')||p.last_name) patient_name,
     c.case_number,i.invoice_number,i.payment_status,i.paid_amount
     FROM patient_charges pc JOIN charge_types ct ON ct.id=pc.charge_type_id
+    LEFT JOIN inventory_items ii ON ii.id=pc.inventory_item_id
     JOIN patients p ON p.id=pc.patient_id
     LEFT JOIN consultation_cases c ON c.id=pc.consultation_case_id
     JOIN invoices i ON i.id=pc.invoice_id
     ${where.length?`WHERE ${where.join(" AND ")}`:""}
     ORDER BY pc.charge_date DESC,pc.id DESC`).all(...params);
-  res.json(rows);
+  res.json(rows.map(billingIdentity));
 });
 
 router.post("/patient-charges", (req, res) => {
-  const quantity=Math.max(1,parseInt(req.body.quantity,10)||1);
-  if(!req.body.patient_id||!req.body.charge_type_id)
-    return res.status(400).json({message:"Patient and charge type are required."});
+  if(!req.body.patient_id)
+    return res.status(400).json({message:"Patient is required."});
   try {
     const create=db.transaction(()=>{
-      const patient=db.prepare("SELECT id FROM patients WHERE id=? AND is_archived=0").get(req.body.patient_id);
-      const charge=db.prepare("SELECT * FROM charge_types WHERE id=? AND is_active=1").get(req.body.charge_type_id);
+      const lines = req.body.items || [req.body];
+      if (!Array.isArray(lines) || !lines.length || lines.length > 100) throw new Error("Select between 1 and 100 charges.");
+      let sharedInvoice = null;
+      const recipient = text(req.body.walk_in_name) || lines.map(line=>text(line.certificate?.recipient_name)).find(Boolean);
+      if (db.prepare("SELECT patient_number FROM patients WHERE id=?").get(req.body.patient_id)?.patient_number === "OPD-WALK-IN" && !recipient)
+        throw new Error("Enter the walk-in patient's full name.");
+      const results = lines.map(line => {
+      const body = {...req.body, ...line, patient_id:req.body.patient_id, consultation_case_id:req.body.consultation_case_id};
+      const quantity = Number(body.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1) throw new Error("Enter a positive whole quantity.");
+      const item = body.inventory_item_id ? db.prepare("SELECT * FROM inventory_items WHERE id=? AND is_archived=0").get(body.inventory_item_id) : null;
+      if (body.inventory_item_id && !item) throw new Error("Active inventory item not found.");
+      if (item) body.charge_type_id = db.prepare("SELECT id FROM charge_types WHERE name='Inventory Item'").get()?.id;
+      const patient=db.prepare("SELECT id,patient_number FROM patients WHERE id=? AND is_archived=0").get(body.patient_id);
+      const charge=db.prepare("SELECT * FROM charge_types WHERE id=? AND is_active=1").get(body.charge_type_id);
       if(!patient)throw new Error("Active patient not found.");
       if(!charge)throw new Error("Active charge type not found.");
-      if(req.body.consultation_case_id){
+      if(patient.patient_number === "OPD-WALK-IN" && body.consultation_case_id) throw new Error("OPD Walk-in charges cannot link to a consultation.");
+      if(body.consultation_case_id){
         const linked=db.prepare("SELECT id FROM consultation_cases WHERE id=? AND patient_id=?")
-          .get(req.body.consultation_case_id,req.body.patient_id);
+          .get(body.consultation_case_id,body.patient_id);
         if(!linked)throw new Error("The selected case does not belong to this patient.");
       }
-      const unitAmount=Math.max(0,Number(req.body.unit_amount ?? charge.default_amount)||0);
+      if (item && item.selling_price == null) throw new Error(`Set a selling price for ${item.item_name} in Inventory first.`);
+      const unitAmount=Number(item ? item.selling_price : (body.unit_amount ?? charge.default_amount));
+      if (!Number.isFinite(unitAmount) || unitAmount < 0) throw new Error("Enter a valid charge amount.");
       const total=unitAmount*quantity;
-      let invoice=req.body.consultation_case_id?db.prepare(
-        "SELECT * FROM invoices WHERE consultation_case_id=?").get(req.body.consultation_case_id):null;
+      let invoice=sharedInvoice || (body.consultation_case_id?db.prepare(
+        "SELECT * FROM invoices WHERE consultation_case_id=?").get(body.consultation_case_id):null);
       if(!invoice){
-        const invoiceNumber=`MSC-${Date.now()}`;
+        const invoiceNumber=nextNumber("MSC", "invoices", "invoice_number");
         const result=db.prepare(`INSERT INTO invoices
           (invoice_number,patient_id,consultation_case_id,invoice_date,subtotal,total_amount,payment_status,notes)
-          VALUES (?,?,?,?,?,?,?,?)`).run(invoiceNumber,req.body.patient_id,
-          req.body.consultation_case_id||null,text(req.body.charge_date)||new Date().toISOString().slice(0,10),
+          VALUES (?,?,?,?,?,?,?,?)`).run(invoiceNumber,body.patient_id,
+          body.consultation_case_id||null,text(body.charge_date)||new Date().toISOString().slice(0,10),
           total,total,"Pending","Patient miscellaneous charges");
         invoice=db.prepare("SELECT * FROM invoices WHERE id=?").get(result.lastInsertRowid);
       }
-      const number=`CHG-${Date.now()}`;
+      sharedInvoice=invoice;
+      if (patient.patient_number === "OPD-WALK-IN") db.prepare("UPDATE invoices SET recipient_name=? WHERE id=?").run(recipient,invoice.id);
+      if (item) releaseInventory({...body, performed_by:req.user?.full_name || req.user?.username, reason:"Other charge", transaction_date:body.charge_date}, "Dispensed");
+      const number=nextNumber("CHG", "patient_charges", "charge_number");
       const result=db.prepare(`INSERT INTO patient_charges
         (charge_number,patient_id,charge_type_id,consultation_case_id,invoice_id,
          description,quantity,unit_amount,total_amount,charge_date,created_by,notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(number,req.body.patient_id,
-          charge.id,req.body.consultation_case_id||null,invoice.id,
-          text(req.body.description)||charge.description,quantity,unitAmount,total,
-          text(req.body.charge_date)||new Date().toISOString().slice(0,10),
-          text(req.body.created_by),text(req.body.notes));
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(number,body.patient_id,
+          charge.id,body.consultation_case_id||null,invoice.id,
+          item ? item.item_name : (text(body.description)||charge.description),quantity,unitAmount,total,
+          text(body.charge_date)||new Date().toISOString().slice(0,10),
+          text(body.created_by),text(body.notes));
+      if (line.certificate != null) {
+        if (item || !/medical cert/i.test(`${charge.name} ${charge.category}`)) throw new Error("This charge is not a medical certificate.");
+        const certificate = validateMedicalCertificate(line.certificate, req.user);
+        if (patient.patient_number === "OPD-WALK-IN" && !certificate.recipient_name) throw new Error("Enter the certificate recipient name.");
+        db.prepare("UPDATE patient_charges SET certificate=? WHERE id=?").run(JSON.stringify(certificate),result.lastInsertRowid);
+      }
+      if (item) db.prepare("UPDATE patient_charges SET inventory_item_id=? WHERE id=?").run(item.id,result.lastInsertRowid);
       upsertInvoiceItem({
-        invoice_id:invoice.id,patient_id:req.body.patient_id,
-        consultation_case_id:req.body.consultation_case_id||null,
+        invoice_id:invoice.id,patient_id:body.patient_id,
+        consultation_case_id:body.consultation_case_id||null,
         source_type:"manual_charge",source_id:result.lastInsertRowid,
-        category:charge.category,description:text(req.body.description)||charge.name,
-        quantity,unit_price:unitAmount,discount:req.body.discount||0,
-        remarks:req.body.notes,
+        category:charge.category,description:item ? item.item_name : (text(body.description)||charge.name),
+        quantity,unit_price:unitAmount,discount:body.discount||0,
+        remarks:body.notes,
       });
       recalculateInvoice(invoice.id);
       return {id:result.lastInsertRowid,charge_number:number,invoice_number:invoice.invoice_number,total};
+      });
+      return {...results[0], charges:results, total:results.reduce((sum,line)=>sum+line.total,0)};
     });
     res.status(201).json({...create(),message:"Patient charge added to billing."});
   }catch(error){res.status(400).json({message:error.message});}
 });
+
+router.put("/patient-charges/:id/certificate", (req, res) => {
+  if (!['doctor','admin'].includes(req.user?.role)) return res.status(403).json({message:"Only doctors and administrators can edit medical certificates."});
+  const charge = db.prepare(`SELECT pc.id, pc.patient_id, ct.name, ct.category FROM patient_charges pc
+    JOIN charge_types ct ON ct.id=pc.charge_type_id WHERE pc.id=?`).get(req.params.id);
+  if (!charge) return res.status(404).json({message:"Charge not found."});
+  if (!/medical cert/i.test(`${charge.name} ${charge.category}`)) return res.status(400).json({message:"This charge is not a medical certificate."});
+  try {
+    const certificate = validateMedicalCertificate(req.body, req.user);
+    if (db.prepare("SELECT patient_number FROM patients WHERE id=?").get(charge.patient_id)?.patient_number === "OPD-WALK-IN" && !certificate.recipient_name) throw new Error("Enter the certificate recipient name.");
+    db.prepare("UPDATE patient_charges SET certificate=? WHERE id=?").run(JSON.stringify(certificate),charge.id);
+    res.json({certificate, message:"Medical certificate saved."});
+  } catch (error) { res.status(400).json({message:error.message}); }
+
+});
+
 
 router.put("/tools/clinic-settings", (req, res) => {
   const values = [text(req.body.clinic_name), text(req.body.clinic_address), text(req.body.doctor_name)];
@@ -375,19 +433,19 @@ router.get("/inventory/overview", (req, res) => {
 });
 
 router.post("/inventory/items", (req, res) => {
-  const required = ["item_code", "item_name", "category", "unit_of_measurement"];
+  const required = ["item_name", "category", "unit_of_measurement"];
   if (required.some((key) => !text(req.body[key]))) {
-    return res.status(400).json({ message: "Item code, name, category, and unit are required." });
+    return res.status(400).json({ message: "Item name, category, and unit are required." });
   }
   try {
     const result = db.prepare(`INSERT INTO inventory_items
       (item_code,item_name,category,brand,description,unit_of_measurement,supplier,
-       minimum_stock_level,unit_cost,storage_location)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
-      text(req.body.item_code), text(req.body.item_name), text(req.body.category),
+       minimum_stock_level,unit_cost,storage_location,selling_price)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
+      text(req.body.item_code) || nextNumber("ITM","inventory_items","item_code"), text(req.body.item_name), text(req.body.category),
       text(req.body.brand), text(req.body.description), text(req.body.unit_of_measurement),
       text(req.body.supplier), Math.max(0, parseInt(req.body.minimum_stock_level,10)||0),
-      Math.max(0, Number(req.body.unit_cost)||0), text(req.body.storage_location));
+      Math.max(0, Number(req.body.unit_cost)||0), text(req.body.storage_location), req.body.selling_price === "" || req.body.selling_price == null ? null : Math.max(0,Number(req.body.selling_price)||0));
     res.status(201).json({ id: result.lastInsertRowid, message: "Inventory item added." });
   } catch (error) {
     res.status(String(error.message).includes("UNIQUE") ? 409 : 500)
@@ -398,12 +456,12 @@ router.post("/inventory/items", (req, res) => {
 router.put("/inventory/items/:id", (req, res) => {
   const result = db.prepare(`UPDATE inventory_items SET item_code=?,item_name=?,
     category=?,brand=?,description=?,unit_of_measurement=?,supplier=?,
-    minimum_stock_level=?,unit_cost=?,storage_location=?,updated_at=CURRENT_TIMESTAMP
+    minimum_stock_level=?,unit_cost=?,storage_location=?,selling_price=?,updated_at=CURRENT_TIMESTAMP
     WHERE id=?`).run(
     text(req.body.item_code), text(req.body.item_name), text(req.body.category),
     text(req.body.brand), text(req.body.description), text(req.body.unit_of_measurement),
     text(req.body.supplier), Math.max(0,parseInt(req.body.minimum_stock_level,10)||0),
-    Math.max(0,Number(req.body.unit_cost)||0), text(req.body.storage_location), req.params.id);
+    Math.max(0,Number(req.body.unit_cost)||0), text(req.body.storage_location), req.body.selling_price === "" || req.body.selling_price == null ? null : Math.max(0,Number(req.body.selling_price)||0), req.params.id);
   if (!result.changes) return res.status(404).json({ message: "Inventory item not found." });
   res.json({ message: "Inventory item updated." });
 });
@@ -724,6 +782,7 @@ router.get("/patients", (req, res) => {
           ) AS last_visit
         FROM patients p
         WHERE p.is_archived = ?
+          AND (p.patient_number != 'OPD-WALK-IN' OR ? = 1)
           AND (
             p.first_name || ' ' ||
             p.last_name LIKE ?
@@ -736,6 +795,7 @@ router.get("/patients", (req, res) => {
       `)
       .all(
         archived,
+        req.query.include_walk_in === "true" ? 1 : 0,
         search,
         search,
         search,
@@ -785,11 +845,25 @@ router.post("/patients", (req, res) => {
       ...details
     } = req.body;
 
-    if (!first_name || !last_name) {
+    if (!normalizePatientName(first_name) || !normalizePatientName(last_name)) {
       return res.status(400).json({
         message:
           "First and last name are required.",
       });
+    }
+
+    if (details.birth_date) {
+      const duplicate = db.prepare(`SELECT id, patient_number, first_name, middle_name, last_name
+        FROM patients WHERE birth_date = ?`).all(details.birth_date).find((patient) =>
+        normalizePatientName(patient.first_name) === normalizePatientName(first_name) &&
+        normalizePatientName(patient.middle_name) === normalizePatientName(details.middle_name) &&
+        normalizePatientName(patient.last_name) === normalizePatientName(last_name));
+      if (duplicate) {
+        return res.status(409).json({
+          message: `A patient with this full name and birthdate already exists (${duplicate.patient_number}). Please use the existing patient record or correct the details.`,
+          patient_id: duplicate.id,
+        });
+      }
     }
 
     const patient_number = nextNumber(
@@ -1002,6 +1076,8 @@ router.delete("/patients/:id", (req, res) => {
       });
     }
 
+    if (db.prepare("SELECT id FROM invoices WHERE patient_id=? LIMIT 1").get(patientId))
+      return res.status(409).json({message:"This patient has permanent billing history. Archive the patient instead of deleting."});
     const removePatient = db.transaction(() => {
       const ids = (table, column) =>
         db.prepare(`SELECT id FROM ${table} WHERE ${column} = ?`)
@@ -1346,7 +1422,7 @@ router.post("/cases", (req, res) => {
           ?
         )
       `).run(
-        `OR-${case_number.replace(
+        `INV-${case_number.replace(
           "CASE-",
           "",
         )}`,
@@ -1372,6 +1448,13 @@ router.post("/cases", (req, res) => {
       recalculateInvoice(invoiceResult.lastInsertRowid);
       if (appointment_id) db.prepare("UPDATE appointments SET status='Completed',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(appointment_id);
 
+      const prenatalVisit = /prenatal/i.test(resolvedServiceType) ? savePrenatalVisit(db, {
+        ...req.body, consultation_case_id: Number(result.lastInsertRowid), visit_date: consultation_date,
+        service_type: resolvedServiceType, doctor_id: req.user.id,
+        assessment: diagnoses.join(", "), notes: req.body.prenatal_notes || doctor_notes || null,
+        next_visit_date: req.body.next_prenatal_visit || follow_up_date || null,
+      }) : null;
+
       return {
         id: result.lastInsertRowid,
         case_number,
@@ -1383,6 +1466,8 @@ router.post("/cases", (req, res) => {
         service_name: configuredService.name,
         service_price: configuredService.default_fee,
         invoice_id: invoiceResult.lastInsertRowid,
+        pregnancy_id: prenatalVisit?.pregnancy_id,
+        prenatal_record_id: prenatalVisit?.id,
       };
     });
 
@@ -1390,7 +1475,7 @@ router.post("/cases", (req, res) => {
   } catch (err) {
     console.error(err);
 
-    res.status(500).json({
+    res.status(err.status || 500).json({
       message: err.message,
     });
   }
@@ -1553,6 +1638,8 @@ router.get("/cases/:id", (req, res) => {
         items: labItems.all(item.id),
       }));
 
+    record.prenatal_record = db.prepare("SELECT * FROM prenatal_records WHERE consultation_case_id = ? ORDER BY id DESC LIMIT 1").get(record.id) || null;
+
     record.invoice = db
       .prepare(`
         SELECT *
@@ -1571,8 +1658,45 @@ router.get("/cases/:id", (req, res) => {
   }
 });
 
+router.put("/cases/:id/lab-results/:itemId", (req, res) => {
+  if (!["admin", "doctor"].includes(req.user.role)) {
+    return res.status(403).json({ message: "Only Admin and Doctor accounts can record lab results." });
+  }
+  const caseId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+  const result = text(req.body.result);
+  const resultDate = text(req.body.result_date);
+  if (!Number.isInteger(caseId) || caseId <= 0 || !Number.isInteger(itemId) || itemId <= 0) {
+    return res.status(400).json({ message: "Invalid consultation or laboratory test." });
+  }
+  if (!result || !resultDate || !/^\d{4}-\d{2}-\d{2}$/.test(resultDate) ||
+      !Number.isFinite(Date.parse(resultDate)) || new Date(resultDate).toISOString().slice(0, 10) !== resultDate) {
+    return res.status(400).json({ message: "Enter the laboratory result and a valid result date." });
+  }
+  try {
+    const item = db.prepare(`SELECT i.* FROM laboratory_request_items i
+      JOIN laboratory_requests r ON r.id = i.laboratory_request_id
+      WHERE i.id = ? AND r.consultation_case_id = ?`).get(itemId, caseId);
+    if (!item) return res.status(404).json({ message: "Laboratory test not found for this consultation." });
+    db.prepare(`UPDATE laboratory_request_items
+      SET result = ?, result_date = ?, status = 'Completed' WHERE id = ?`).run(result, resultDate, itemId);
+    res.json(db.prepare("SELECT * FROM laboratory_request_items WHERE id = ?").get(itemId));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 router.patch("/cases/:id", (req, res) => {
   try {
+    if (req.body.lab_results !== undefined && typeof req.body.lab_results !== "string") {
+      return res.status(400).json({ message: "Lab results must be text." });
+    }
+    if (!["admin", "doctor"].includes(req.user.role)) {
+      return res.status(403).json({ message: "Only Admin and Doctor accounts can edit consultations." });
+    }
+    if (req.body.diagnoses !== undefined && (!Array.isArray(req.body.diagnoses) || req.body.diagnoses.some((name) => typeof name !== "string"))) {
+      return res.status(400).json({ message: "Diagnoses must be a list of names." });
+    }
     const allowed = [
       "appointment_id",
       "service_type",
@@ -1585,6 +1709,7 @@ router.patch("/cases/:id", (req, res) => {
       "height_cm",
       "treatment",
       "doctor_notes",
+      "lab_results",
       "follow_up_date",
       "case_status",
     ];
@@ -1653,6 +1778,7 @@ router.patch("/cases/:id", (req, res) => {
 
     const values = fields.map((field) => {
       const value = req.body[field];
+      if (field === "lab_results") return value.trim();
 
       if (
         value === undefined ||
@@ -1664,8 +1790,8 @@ router.patch("/cases/:id", (req, res) => {
       return value;
     });
 
-    const result = db
-      .prepare(`
+    const result = db.transaction(() => {
+      const updated = db.prepare(`
         UPDATE consultation_cases
         SET ${fields
           .map(
@@ -1676,6 +1802,18 @@ router.patch("/cases/:id", (req, res) => {
         WHERE id = ?
       `)
       .run(...values, req.params.id);
+      if (req.body.diagnoses !== undefined) {
+        db.prepare("DELETE FROM case_diagnoses WHERE consultation_case_id = ?").run(existingCase.id);
+        const names = [...new Set(req.body.diagnoses.map((name) => name.trim()).filter(Boolean))];
+        names.forEach((name, index) => {
+          db.prepare("INSERT OR IGNORE INTO diagnoses (diagnosis_name) VALUES (?)").run(name);
+          const diagnosis = db.prepare("SELECT id FROM diagnoses WHERE diagnosis_name = ?").get(name);
+          db.prepare("INSERT INTO case_diagnoses (consultation_case_id, diagnosis_id, is_primary) VALUES (?, ?, ?)")
+            .run(existingCase.id, diagnosis.id, index === 0 ? 1 : 0);
+        });
+      }
+      return updated;
+    })();
 
     if (!result.changes) {
       return res.status(404).json({
@@ -1732,51 +1870,6 @@ router.get("/invoices/:id/details", (req, res) => {
     LEFT JOIN settings s ON s.id=1 WHERE i.id=?`).get(req.params.id);
   if(!invoice)return res.status(404).json({message:"Invoice not found."});
 
-  const legacyCharges = db.prepare(`
-    SELECT pc.*, ct.name charge_name, ct.category
-    FROM patient_charges pc
-    JOIN charge_types ct ON ct.id = pc.charge_type_id
-    WHERE pc.invoice_id = ?
-  `).all(invoice.id);
-  legacyCharges.forEach((charge) => {
-    upsertInvoiceItem({
-      invoice_id: invoice.id,
-      patient_id: invoice.patient_id,
-      consultation_case_id: invoice.consultation_case_id,
-      source_type: "manual_charge",
-      source_id: charge.id,
-      category: charge.category || "Miscellaneous",
-      description: charge.description || charge.charge_name,
-      quantity: charge.quantity,
-      unit_price: charge.unit_amount,
-      discount: 0,
-      remarks: charge.notes,
-    });
-  });
-
-  if (invoice.consultation_case_id && invoice.service_type) {
-    const service = db.prepare(
-      "SELECT * FROM service_types WHERE name=? COLLATE NOCASE",
-    ).get(invoice.service_type);
-    if (service) {
-      upsertInvoiceItem({
-        invoice_id: invoice.id,
-        patient_id: invoice.patient_id,
-        consultation_case_id: invoice.consultation_case_id,
-        source_type: "consultation_service",
-        source_id: service.id,
-        category: "Service",
-        description: service.name,
-        quantity: 1,
-        unit_price: service.default_fee,
-        discount: 0,
-      });
-      invoice = { ...invoice, ...recalculateInvoice(invoice.id) };
-    }
-  }
-  if (legacyCharges.length) {
-    invoice = { ...invoice, ...recalculateInvoice(invoice.id) };
-  }
   invoice.items=db.prepare(`SELECT *,unit_price_cents/100.0 unit_price,
     subtotal_cents/100.0 item_subtotal,discount_cents/100.0 item_discount,
     final_amount_cents/100.0 final_amount FROM invoice_items
@@ -1786,7 +1879,11 @@ router.get("/invoices/:id/details", (req, res) => {
     ii.description item_description FROM billing_adjustments ba
     LEFT JOIN invoice_items ii ON ii.id=ba.invoice_item_id
     WHERE ba.invoice_id=? ORDER BY ba.created_at`).all(invoice.id);
-  res.json(invoice);
+  invoice.patient_name=[invoice.first_name,invoice.middle_name,invoice.last_name].filter(Boolean).join(" ");
+  invoice.voided_items=db.prepare(`SELECT *,unit_price_cents/100.0 unit_price,discount_cents/100.0 item_discount,
+    final_amount_cents/100.0 final_amount FROM invoice_items WHERE invoice_id=? AND is_void=1 ORDER BY id`).all(invoice.id);
+  invoice.audit=db.prepare("SELECT * FROM billing_audit WHERE invoice_id=? ORDER BY id DESC").all(invoice.id);
+  res.json(billingIdentity(invoice));
 });
 
 router.post("/invoices/:id/items", (req,res)=>{
@@ -1970,7 +2067,7 @@ router.get("/billings", (req, res) => {
       `)
       .all();
 
-    res.json(rows);
+    res.json(rows.map(billingIdentity));
   } catch (err) {
     console.error(err);
 

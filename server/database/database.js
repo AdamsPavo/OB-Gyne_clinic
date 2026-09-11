@@ -662,6 +662,7 @@ for (const column of patientColumns) {
 */
 
 const consultationCaseColumns = [
+  "lab_results TEXT",
   "appointment_id INTEGER REFERENCES appointments(id) ON DELETE SET NULL",
   "service_type TEXT",
   "service_id INTEGER REFERENCES service_types(id) ON DELETE RESTRICT",
@@ -783,6 +784,9 @@ for (const column of laboratoryRequestColumns) {
 
 const laboratoryRequestItemColumns = [
   "instructions TEXT",
+  "status TEXT DEFAULT 'Requested'",
+  "result TEXT",
+  "result_date TEXT",
 ];
 
 for (const column of laboratoryRequestItemColumns) {
@@ -886,5 +890,27 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_inventory_transactions_item
     ON inventory_transactions(inventory_item_id);
 `);
+
+if (!db.prepare("PRAGMA table_info(inventory_items)").all().some(column => column.name === "selling_price"))
+  db.exec("ALTER TABLE inventory_items ADD COLUMN selling_price REAL");
+
+// Keep charge documents with their billing record.
+for (const [name, type] of [["inventory_item_id", "INTEGER"], ["certificate", "TEXT"]]) {
+  if (!db.prepare("PRAGMA table_info(patient_charges)").all().some(column => column.name === name))
+    db.exec(`ALTER TABLE patient_charges ADD COLUMN ${name} ${type}`);
+}
+db.prepare(`INSERT OR IGNORE INTO charge_types (name,category,description,default_amount)
+  VALUES ('Medical Certificate','Medical Certificate','Medical certificate',0),
+         ('Miscellaneous','Miscellaneous','Other miscellaneous charge',0),
+         ('Inventory Item','Inventory','Inventory item charge',0)`).run();
+
+require("../services/pregnancies").initializePregnancies(db);
+
+db.prepare(`INSERT OR IGNORE INTO patients (id,patient_number,first_name,last_name)
+  VALUES (-1,'OPD-WALK-IN','OPD','Walk-in')`).run();
+
+if (!db.prepare("PRAGMA table_info(invoices)").all().some(column => column.name === "recipient_name"))
+  db.exec("ALTER TABLE invoices ADD COLUMN recipient_name TEXT");
+require("../services/billingHistory").initializeBillingHistory(db);
 
 module.exports = db;

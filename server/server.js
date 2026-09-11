@@ -19,7 +19,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api", requireAuth, (req, res, next) => {
   if (req.user.role !== "staff") return next();
-  const allowed = ["/dashboard", "/patients", "/appointments", "/billings", "/invoices", "/patient-charges", "/inventory", "/services", "/service-types"];
+  const allowed = ["/dashboard", "/patients", "/appointments", "/billings", "/invoices", "/patient-charges", "/charge-types", "/inventory", "/services", "/service-types"];
   if (!allowed.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
     return res.status(403).json({ message: "Staff accounts cannot access this module." });
   }

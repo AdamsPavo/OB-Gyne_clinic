@@ -21,7 +21,7 @@ const visit = (id, extra = {}) => ({ consultation_case_id: id, patient_id: id ==
 function call(router, method, path, req) {
   const route = router.stack.find((layer) => layer.route?.path === path && layer.route.methods[method]).route;
   const response = { code: 200, status(value) { this.code = value; return this; }, json(value) { this.body = value; return this; } };
-  let index = 0; const next = () => route.stack[index++]?.handle({ user: { id: 1, role: "doctor" }, params: {}, query: {}, body: {}, ...req }, response, next);
+  let index = 0; const next = () => route.stack[index++]?.handle({ path, method: method.toUpperCase(), user: { id: 1, role: "doctor" }, params: {}, query: {}, body: {}, ...req }, response, next);
   next(); return response;
 }
 

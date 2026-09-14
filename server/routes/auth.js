@@ -14,49 +14,8 @@ const JWT_SECRET =
 |--------------------------------------------------------------------------
 */
 
-function authenticate(req, res, next) {
-  const authorization = req.headers.authorization;
-
-  if (!authorization || !authorization.startsWith("Bearer ")) {
-    return res.status(401).json({
-      message: "Authentication is required.",
-    });
-  }
-
-  const token = authorization.split(" ")[1];
-
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare("SELECT id, full_name, username, role, is_active FROM users WHERE id = ?").get(payload.id);
-    if (!user || !user.is_active) {
-      return res.status(401).json({ message: "This account is inactive or no longer exists." });
-    }
-    req.user = user;
-    next();
-  } catch {
-    return res.status(401).json({
-      message: "Invalid or expired session.",
-    });
-  }
-}
-
-function requireRole(...allowedRoles) {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({
-        message: "Authentication is required.",
-      });
-    }
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({
-        message: "You do not have permission to perform this action.",
-      });
-    }
-
-    next();
-  };
-}
+const { requireAuth: authenticate } = require("../middleware/auth");
+const { publicUser } = require("../services/permissions");
 
 /*
 |--------------------------------------------------------------------------
@@ -284,7 +243,8 @@ router.post("/login", async (req, res) => {
           username,
           password_hash,
           role,
-          is_active
+          is_active,
+          permissions
         FROM users
         WHERE LOWER(username) = LOWER(?)
       `)
@@ -308,6 +268,7 @@ router.post("/login", async (req, res) => {
         id: user.id,
         username: user.username,
         role: user.role,
+        sessionVersion: db.prepare("SELECT session_version FROM app_runtime_state WHERE id=1").get()?.session_version || "0",
       },
       JWT_SECRET,
       {
@@ -324,6 +285,7 @@ router.post("/login", async (req, res) => {
         username: user.username,
         role: user.role,
         is_active: Boolean(user.is_active),
+        permissions: publicUser(user).permissions,
       },
     });
   } catch (error) {
@@ -356,7 +318,7 @@ router.post("/login", async (req, res) => {
 router.post(
   "/register",
   authenticate,
-  requireRole("doctor"),
+  (req, res, next) => req.user.role === "admin" ? next() : res.status(403).json({ message: "Only Admin can create accounts through this legacy endpoint." }),
   async (req, res) => {
     const {
       fullname,
@@ -437,10 +399,10 @@ router.post(
 
 router.get("/profile", authenticate, (req, res) => {
   const user = db.prepare(
-    "SELECT id, fullname, username, role, created_at FROM users WHERE id = ?"
+    "SELECT id, fullname, full_name, username, role, is_active, permissions, created_at FROM users WHERE id = ?"
   ).get(req.user.id);
   if (!user) return res.status(404).json({ message: "User account not found." });
-  res.json(user);
+  res.json(publicUser(user));
 });
 
 router.put("/profile", authenticate, (req, res) => {
@@ -453,12 +415,12 @@ router.put("/profile", authenticate, (req, res) => {
     "SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id <> ?"
   ).get(username, req.user.id);
   if (duplicate) return res.status(409).json({ message: "Username already exists." });
-  db.prepare("UPDATE users SET fullname = ?, username = ? WHERE id = ?")
-    .run(fullname, username, req.user.id);
+  db.prepare("UPDATE users SET fullname = ?, full_name = ?, username = ? WHERE id = ?")
+    .run(fullname, fullname, username, req.user.id);
   const user = db.prepare(
-    "SELECT id, fullname, username, role FROM users WHERE id = ?"
+    "SELECT id, fullname, full_name, username, role, is_active, permissions FROM users WHERE id = ?"
   ).get(req.user.id);
-  res.json({ message: "Profile updated successfully.", user });
+  res.json({ message: "Profile updated successfully.", user: publicUser(user) });
 });
 
 router.put("/password", authenticate, async (req, res) => {
@@ -476,6 +438,14 @@ router.put("/password", authenticate, async (req, res) => {
   const password = await bcrypt.hash(newPassword, 12);
   db.prepare("UPDATE users SET password = ? WHERE id = ?").run(password, req.user.id);
   res.json({ message: "Password changed successfully." });
+});
+
+router.post("/authorize", authenticate, (req, res) => {
+  const { hasPermission } = require("../services/permissions");
+  const { modules } = require("../../shared/permissions.mjs");
+  const { module, action } = req.body;
+  if (!modules.some(m => m.id === module && m.actions.includes(action)) || !hasPermission(req.user,module,action)) return res.status(403).json({message:"You do not have permission to perform this action."});
+  res.json({allowed:true});
 });
 
 module.exports = router;

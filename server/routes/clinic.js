@@ -1,10 +1,11 @@
 const express = require("express");
 const db = require("../database/database");
-const fs = require("fs");
-const path = require("path");
 
 const { validateMedicalCertificate } = require("../services/medicalCertificate");
 const router = express.Router();
+const { permissionGuard, hasPermission } = require("../services/permissions");
+router.use(permissionGuard);
+router.use(require("./backups")(db));
 const { savePrenatalVisit } = require("../services/pregnancies");
 router.use(require("./pregnancies")(db));
 const text = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -117,8 +118,7 @@ router.get("/service-types", (req, res) => {
 });
 
 const serviceSelect = `id, name, name AS service_name, default_fee, default_fee AS price, is_active, created_at, updated_at`;
-const serviceManager = (req, res, next) => ["admin", "doctor"].includes(req.user.role)
-  ? next() : res.status(403).json({ message: "Only Admin and Doctor accounts can manage services." });
+const serviceManager = permissionGuard;
 const servicePayload = (body) => ({
   name: text(body.service_name ?? body.name),
   price: Number(body.price ?? body.default_fee),
@@ -126,13 +126,13 @@ const servicePayload = (body) => ({
 });
 
 router.get("/services", (req, res) => {
-  const where = req.user.role === "staff" ? "WHERE is_active=1" : "";
+  const where = !hasPermission(req.user, "tools") ? "WHERE is_active=1" : "";
   res.json(db.prepare(`SELECT ${serviceSelect} FROM service_types ${where} ORDER BY is_active DESC, name`).all());
 });
 router.get("/services/active", (req, res) => res.json(db.prepare(`SELECT ${serviceSelect} FROM service_types WHERE is_active=1 ORDER BY name`).all()));
 router.get("/services/:id", (req, res) => {
   const row = db.prepare(`SELECT ${serviceSelect} FROM service_types WHERE id=?`).get(req.params.id);
-  if (!row || (req.user.role === "staff" && !row.is_active)) return res.status(404).json({ message: "Service not found." });
+  if (!row || (!hasPermission(req.user, "tools") && !row.is_active)) return res.status(404).json({ message: "Service not found." });
   res.json(row);
 });
 router.post("/services", serviceManager, (req, res) => {
@@ -283,7 +283,7 @@ router.post("/patient-charges", (req, res) => {
 });
 
 router.put("/patient-charges/:id/certificate", (req, res) => {
-  if (!['doctor','admin'].includes(req.user?.role)) return res.status(403).json({message:"Only doctors and administrators can edit medical certificates."});
+  if (!hasPermission(req.user, "charges", "edit")) return res.status(403).json({message:"Only doctors and administrators can edit medical certificates."});
   const charge = db.prepare(`SELECT pc.id, pc.patient_id, ct.name, ct.category FROM patient_charges pc
     JOIN charge_types ct ON ct.id=pc.charge_type_id WHERE pc.id=?`).get(req.params.id);
   if (!charge) return res.status(404).json({message:"Charge not found."});
@@ -1448,6 +1448,7 @@ router.post("/cases", (req, res) => {
       recalculateInvoice(invoiceResult.lastInsertRowid);
       if (appointment_id) db.prepare("UPDATE appointments SET status='Completed',updated_at=CURRENT_TIMESTAMP WHERE id=?").run(appointment_id);
 
+      if (/prenatal/i.test(resolvedServiceType) && !hasPermission(req.user, "prenatal", "create")) throw new Error("Prenatal creation permission is required.");
       const prenatalVisit = /prenatal/i.test(resolvedServiceType) ? savePrenatalVisit(db, {
         ...req.body, consultation_case_id: Number(result.lastInsertRowid), visit_date: consultation_date,
         service_type: resolvedServiceType, doctor_id: req.user.id,
@@ -1659,7 +1660,7 @@ router.get("/cases/:id", (req, res) => {
 });
 
 router.put("/cases/:id/lab-results/:itemId", (req, res) => {
-  if (!["admin", "doctor"].includes(req.user.role)) {
+  if (!hasPermission(req.user, "laboratory", "edit")) {
     return res.status(403).json({ message: "Only Admin and Doctor accounts can record lab results." });
   }
   const caseId = Number(req.params.id);
@@ -1691,7 +1692,7 @@ router.patch("/cases/:id", (req, res) => {
     if (req.body.lab_results !== undefined && typeof req.body.lab_results !== "string") {
       return res.status(400).json({ message: "Lab results must be text." });
     }
-    if (!["admin", "doctor"].includes(req.user.role)) {
+    if (!hasPermission(req.user, "consultations", "edit") && !(Object.keys(req.body).length === 1 && Object.hasOwn(req.body, "lab_results") && hasPermission(req.user, "laboratory", "edit"))) {
       return res.status(403).json({ message: "Only Admin and Doctor accounts can edit consultations." });
     }
     if (req.body.diagnoses !== undefined && (!Array.isArray(req.body.diagnoses) || req.body.diagnoses.some((name) => typeof name !== "string"))) {
@@ -2042,6 +2043,11 @@ router.post(
   },
 );
 
+router.get("/billing-history", (req, res) => {
+  const rows = db.prepare(`SELECT i.*, c.case_number, p.patient_number, p.first_name || ' ' || p.last_name AS patient_name FROM invoices i LEFT JOIN consultation_cases c ON c.id=i.consultation_case_id JOIN patients p ON p.id=i.patient_id ORDER BY i.id DESC`).all();
+  res.json(rows.map(billingIdentity));
+});
+
 router.get("/billings", (req, res) => {
   try {
     const rows = db
@@ -2171,94 +2177,6 @@ router.get("/reports/summary", (req, res) => {
 
 /* =========================================================
    DATABASE BACKUPS
-========================================================= */
-
-const backupDir = path.join(
-  __dirname,
-  "..",
-  "storage",
-  "backups",
-);
-
-router.get("/backups", (req, res) => {
-  try {
-    if (!fs.existsSync(backupDir)) {
-      return res.json([]);
-    }
-
-    const backups = fs
-      .readdirSync(backupDir)
-      .filter((name) =>
-        name.endsWith(".db"),
-      )
-      .map((name) => {
-        const filePath = path.join(
-          backupDir,
-          name,
-        );
-
-        const stats =
-          fs.statSync(filePath);
-
-        return {
-          name,
-          createdAt: stats.mtime,
-          size: stats.size,
-        };
-      })
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt) -
-          new Date(a.createdAt),
-      );
-
-    res.json(backups);
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      message: err.message,
-    });
-  }
-});
-
-router.post("/backups", (req, res) => {
-  try {
-    fs.mkdirSync(backupDir, {
-      recursive: true,
-    });
-
-    const name = `obgyn-${new Date()
-      .toISOString()
-      .replace(/[:.]/g, "-")}.db`;
-
-    db.pragma("wal_checkpoint(FULL)");
-
-    fs.copyFileSync(
-      path.join(
-        __dirname,
-        "..",
-        "obgyn.db",
-      ),
-      path.join(backupDir, name),
-    );
-
-    res.status(201).json({
-      name,
-      message: "Backup created.",
-    });
-  } catch (err) {
-    console.error(err);
-
-    res.status(500).json({
-      message: err.message,
-    });
-  }
-});
-
-
-/* =========================================================
-   PRENATAL RECORDS
 ========================================================= */
 
 const prenatalRecordsSelect = `
@@ -2437,10 +2355,6 @@ const resources = {
     required: ["report_name"],
   },
 
-  backups: {
-    table: "backup_records",
-    required: ["backup_name"],
-  },
 };
 
 function assertFields(body, required) {
@@ -2526,9 +2440,9 @@ Object.entries(resources).forEach(
               });
           }
 
-          const fields = Object.keys(
-            req.body,
-          );
+          const columns = new Set(db.prepare(`PRAGMA table_info(${resource.table})`).all().map(column => column.name));
+          const fields = Object.keys(req.body);
+          if (fields.some(field => !columns.has(field) || field === "id")) return res.status(400).json({ message: "Invalid record fields." });
 
           const values = fields.map(
             (field) => req.body[field],
@@ -2567,9 +2481,9 @@ Object.entries(resources).forEach(
       `/${routePath}/:id`,
       (req, res) => {
         try {
-          const fields = Object.keys(
-            req.body,
-          );
+          const columns = new Set(db.prepare(`PRAGMA table_info(${resource.table})`).all().map(column => column.name));
+          const fields = Object.keys(req.body);
+          if (fields.some(field => !columns.has(field) || field === "id")) return res.status(400).json({ message: "Invalid record fields." });
 
           if (!fields.length) {
             return res

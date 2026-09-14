@@ -13,24 +13,12 @@ const { requireAuth } = require("./middleware/auth");
 const app = express();
 
 app.use(cors());
+app.use("/api", require("./services/maintenance").middleware);
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api", requireAuth, (req, res, next) => {
-  if (req.user.role !== "staff") return next();
-  const allowed = ["/dashboard", "/patients", "/appointments", "/billings", "/invoices", "/patient-charges", "/charge-types", "/inventory", "/services", "/service-types"];
-  if (!allowed.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
-    return res.status(403).json({ message: "Staff accounts cannot access this module." });
-  }
-  if ((req.path.startsWith("/services") || req.path.startsWith("/service-types")) && req.method !== "GET") {
-    return res.status(403).json({ message: "Staff accounts cannot manage services or prices." });
-  }
-  if (req.method === "DELETE" || (req.path.startsWith("/patients/") && req.method === "DELETE")) {
-    return res.status(403).json({ message: "Staff accounts cannot perform this action." });
-  }
-  next();
-}, clinicRoutes);
+app.use("/api", requireAuth, clinicRoutes);
 
 app.get("/", (req, res) => {
     res.json({

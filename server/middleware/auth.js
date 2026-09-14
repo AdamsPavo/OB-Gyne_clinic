@@ -10,11 +10,13 @@ function requireAuth(req, res, next) {
   }
   try {
     const payload = jwt.verify(header.slice(7), JWT_SECRET);
-    const user = db.prepare(`SELECT id, full_name, username, role, is_active FROM users WHERE id = ?`).get(payload.id);
+    const version = db.prepare("SELECT session_version FROM app_runtime_state WHERE id=1").get()?.session_version || "0";
+    if ((payload.sessionVersion || "0") !== version) return res.status(401).json({ message: "The database was restored. Please sign in again." });
+    const user = db.prepare(`SELECT id, full_name, username, role, is_active, permissions FROM users WHERE id = ?`).get(payload.id);
     if (!user || !user.is_active) {
       return res.status(401).json({ message: "This account is inactive or no longer exists." });
     }
-    req.user = user;
+    req.user = require("../services/permissions").publicUser(user);
     next();
   } catch {
     return res.status(401).json({ message: "Invalid or expired session." });

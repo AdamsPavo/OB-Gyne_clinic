@@ -1,18 +1,41 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const db = require("../database/database");
-const { requireAuth, allowRoles } = require("../middleware/auth");
+const { requireAuth } = require("../middleware/auth");
 
 const router = express.Router();
-router.use(requireAuth, allowRoles("admin", "doctor"));
-const fields = `id, full_name, username, role, is_active, created_at, updated_at`;
-const getUser = (id) => db.prepare(`SELECT ${fields} FROM users WHERE id = ?`).get(id);
+const { publicUser, permissionGuard, hasPermission, permissionsFor } = require("../services/permissions");
+const { modules, normalizePermissions, legacyPermissions } = require("../../shared/permissions.mjs");
+router.use(requireAuth, (req, res, next) => {
+  // The router mount strips /users; evaluate the same full path as the renderer.
+  const policyRequest = { user: req.user, path: `/users${req.path}`, method: req.method, body: req.body };
+  permissionGuard(policyRequest, res, next);
+});
+router.use((req, res, next) => {
+  if (req.user.role !== "admin" && req.body?.permissions !== undefined) return res.status(403).json({ message: "Only Admin can manage user permissions." });
+  if (req.body?.permissions !== undefined && req.body.role !== "admin") {
+    const value = req.body.permissions;
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.entries(value).some(([key, actions]) => {
+      const definition = modules.find(m => m.id === key);
+      return !definition || !Array.isArray(actions) || actions.some(action => !definition.actions.includes(action));
+    })) return res.status(400).json({ message: "Invalid access permissions." });
+  }
+  if (req.user.role !== "admin" && req.method !== "GET") {
+    const id = req.path.split("/")[1];
+    const target = id ? getUser(id) : { role: "staff", permissions: legacyPermissions("staff") };
+    if (target && (target.role === "admin" || Object.entries(permissionsFor(target)).some(([module, actions]) => actions.some(action => !hasPermission(req.user, module, action))))) return res.status(403).json({ message: "Only Admin can manage an account with greater access than your own." });
+    if (req.body?.role && req.body.role !== target?.role) return res.status(403).json({ message: "Only Admin can change user roles." });
+  }
+  next();
+});
+const fields = `id, full_name, username, role, is_active, permissions, created_at, updated_at`;
+const getUser = (id) => publicUser(db.prepare(`SELECT ${fields} FROM users WHERE id = ?`).get(id));
 const audit = (actor, target, action) => db.prepare(`INSERT INTO user_audit_logs (acting_user_id, target_user_id, action) VALUES (?, ?, ?)`).run(actor, target, action);
-const forbiddenAdmin = (req, target) => req.user.role === "doctor" && target.role === "admin";
+const forbiddenAdmin = (req, target) => req.user.role !== "admin" && target.role === "admin";
 
 router.get("/", (req, res) => {
   const q = `%${String(req.query.search || "").trim()}%`;
-  res.json(db.prepare(`SELECT ${fields} FROM users WHERE full_name LIKE ? OR username LIKE ? ORDER BY created_at DESC`).all(q, q));
+  res.json(db.prepare(`SELECT ${fields} FROM users WHERE full_name LIKE ? OR username LIKE ? ORDER BY created_at DESC`).all(q, q).map(publicUser));
 });
 
 router.post("/", async (req, res) => {
@@ -28,7 +51,7 @@ router.post("/", async (req, res) => {
   if (db.prepare("SELECT id FROM users WHERE LOWER(username)=LOWER(?)").get(username)) return res.status(409).json({ message: "Username already exists." });
   const hash = await bcrypt.hash(password, 12);
   const active = req.body.is_active === false || req.body.is_active === 0 ? 0 : 1;
-  const result = db.prepare(`INSERT INTO users (fullname, full_name, username, password, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(fullName, fullName, username, hash, hash, role, active);
+  const result = db.prepare(`INSERT INTO users (fullname, full_name, username, password, password_hash, role, is_active, permissions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(fullName, fullName, username, hash, hash, role, active, JSON.stringify(role === "admin" ? legacyPermissions("admin") : normalizePermissions(req.body.permissions ?? legacyPermissions(role))));
   audit(req.user.id, result.lastInsertRowid, "User created");
   res.status(201).json(getUser(result.lastInsertRowid));
 });
@@ -44,8 +67,8 @@ router.put("/:id", (req, res) => {
   if (target.role === 'admin' && role !== 'admin' && target.is_active && db.prepare("SELECT COUNT(*) total FROM users WHERE role='admin' AND is_active=1").get().total <= 1) return res.status(400).json({ message: "The last active Admin cannot be changed to another role." });
   const duplicate = db.prepare("SELECT id FROM users WHERE LOWER(username)=LOWER(?) AND id<>?").get(username, target.id);
   if (duplicate) return res.status(409).json({ message: "Username already exists." });
-  db.prepare(`UPDATE users SET fullname=?, full_name=?, username=?, role=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(fullName, fullName, username, role, target.id);
-  audit(req.user.id, target.id, "User updated"); res.json(getUser(target.id));
+  db.prepare(`UPDATE users SET fullname=?, full_name=?, username=?, role=?, permissions=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(fullName, fullName, username, role, JSON.stringify(role === "admin" ? legacyPermissions("admin") : normalizePermissions(req.body.permissions ?? target.permissions)), target.id);
+  audit(req.user.id, target.id, req.body.permissions !== undefined ? "User and access permissions updated" : "User updated"); res.json(getUser(target.id));
 });
 
 router.put("/:id/password", async (req, res) => {

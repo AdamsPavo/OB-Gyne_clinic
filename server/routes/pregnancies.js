@@ -3,7 +3,7 @@ const { currentPregnancy, createPregnancy, savePrenatalVisit, officialEdd, gesta
 
 module.exports = (db) => {
   const router = express.Router();
-  const clinical = (req, res, next) => ["doctor", "admin"].includes(req.user?.role) ? next() : res.status(403).json({ message: "Only doctors and admins can access pregnancy records." });
+  const clinical = require("../services/permissions").permissionGuard;
   const handle = (fn) => (req, res) => { try { fn(req, res); } catch (error) { res.status(error.status || 400).json({ message: error.message }); } };
   const base = `SELECT g.*,p.first_name,p.middle_name,p.last_name,p.patient_number,p.birth_date,p.existing_illnesses,p.family_history,p.ob_history,
     COALESCE(u.fullname,'Attending Physician') doctor_name FROM pregnancy_records g JOIN patients p ON p.id=g.patient_id LEFT JOIN users u ON u.id=g.doctor_id`;

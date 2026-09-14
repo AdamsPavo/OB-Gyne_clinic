@@ -1,5 +1,6 @@
+const { hasPermission } = require("../../shared/permissions.mjs");
 function validateMedicalCertificate(body, user) {
-  if (!['doctor', 'admin'].includes(user?.role)) throw new Error('Only doctors and administrators can edit medical certificates.');
+  if (!hasPermission(user,"charges","edit")) throw new Error('Only doctors and administrators can edit medical certificates.');
   const certificate = {};
   for (const field of ['issued_date', 'examination_date', 'purpose', 'findings', 'recommendations', 'physician', 'license_number']) {
     if (typeof body?.[field] !== 'string' || body[field].length > 10000) throw new Error('Invalid certificate fields.');

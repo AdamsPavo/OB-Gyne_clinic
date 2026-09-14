@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { api } from "../api/client";
 
@@ -15,11 +15,15 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+import { modules } from "../auth";
+import { canVisit } from "../../../shared/permissions.mjs";
+
 import Logo from "../assets/OB-bg.png";
 import OBlogo from "../assets/OBLOGO.png";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [query] = useSearchParams();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -67,7 +71,7 @@ export default function Login() {
       // Remove the old storage key to avoid confusion.
       localStorage.removeItem("user");
 
-      navigate("/dashboard", {
+      navigate(modules.find(module => canVisit(user, module.path))?.path || "/dashboard", {
         replace: true,
       });
     } catch (error) {
@@ -108,11 +112,11 @@ export default function Login() {
   ];
 
   return (
-    <div className="relative flex min-h-screen overflow-hidden bg-linear-to-br from-[#fff7fa] via-white to-[#ffe6ef]">
+    <div className="clinic-login relative flex min-h-screen overflow-hidden bg-linear-to-br from-pink-100 via-rose-50 to-fuchsia-100">
       <div className="absolute -left-40 -top-40 h-125 w-125 rounded-full bg-pink-200/30 blur-3xl" />
       <div className="absolute bottom-0 right-0 h-112.5 w-112.5 rounded-full bg-rose-200/30 blur-3xl" />
 
-      <div className="hidden w-1/2 items-center justify-center px-20 lg:flex">
+      <div className="hidden w-1/2 items-center justify-center border-r border-pink-100/70 px-10 xl:px-16 lg:flex">
         <div className="flex h-full w-full flex-col justify-center text-center">
           <img
             src={Logo}
@@ -124,7 +128,7 @@ export default function Login() {
             {features.map((feature) => (
               <div
                 key={feature.title}
-                className="rounded-3xl border border-pink-100 bg-white p-6 shadow-lg"
+                className="rounded-2xl border border-pink-100/70 bg-white/70 p-4"
               >
                 {feature.icon}
 
@@ -142,26 +146,28 @@ export default function Login() {
       </div>
 
       <div className="flex w-full items-center justify-center p-6 lg:w-1/2">
-        <div className="w-full max-w-md rounded-[40px] border border-white/30 bg-linear-to-br from-pink-500/90 via-rose-400/90 to-pink-300/90 p-10 shadow-[0_25px_70px_rgba(236,72,153,.35)] backdrop-blur-2xl">
+        <div className="relative w-full max-w-md rounded-3xl border border-pink-200 bg-linear-to-br from-pink-200 via-rose-200 to-pink-100 p-6 shadow-xl shadow-pink-300/40 sm:p-10">
           <div className="relative mb-8 flex justify-center">
             <div className="absolute h-44 w-44 rounded-full bg-white opacity-40 blur-xl" />
 
-            <div className="relative rounded-full bg-white p-5 shadow-2xl">
+            <div className="relative rounded-2xl border border-pink-100 bg-pink-50/50 p-3">
               <img
                 src={OBlogo}
                 alt="Clinic Logo"
-                className="h-32 w-32 object-contain"
+                className="h-16 w-16 object-contain"
               />
             </div>
           </div>
 
-          <h2 className="text-center text-5xl font-bold text-gray-800">
+          <h2 className="text-center text-3xl font-bold tracking-tight text-slate-900">
             Welcome Back
           </h2>
 
           <p className="mb-8 mt-3 text-center text-gray-600">
             Login to access your clinic dashboard
           </p>
+
+          {query.get("restored") === "1" && <p role="status" className="mb-5 rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">Database restored successfully. Sign in using an account and password from the restored backup.</p>}
 
           <form
             onSubmit={handleLogin}
@@ -271,7 +277,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-pink-500 to-rose-500 py-4 font-semibold text-white transition hover:-translate-y-1 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-pink-600 hover:bg-pink-700 py-4 font-semibold text-white transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 "Logging in..."

@@ -1,3 +1,6 @@
+import { can } from "../auth";
+import { authorizeAction } from "../utils/permissionedPrint";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useMemo, useState } from "react";
 import {
   Banknote,
@@ -14,7 +17,7 @@ import {
 } from "lucide-react";
 
 import BillingHistory from "../components/BillingHistory";
-import { printStatementOfAccount } from "../utils/print";
+import { printStatementOfAccount } from "../utils/permissionedPrint";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
 import { Link } from "react-router-dom";
@@ -509,7 +512,8 @@ export default function Billing() {
     }
   };
 
-  const printReceipt = () => {
+  const printReceipt = async () => {
+    if (!await authorizeAction("billing", "print")) return;
     if (!selectedInvoice?.receipt_number) {
       return;
     }
@@ -840,7 +844,7 @@ export default function Billing() {
       <Sidebar activeItem="Billing" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white shadow-lg shadow-pink-200/50 sm:m-6 sm:p-8">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white shadow-lg shadow-pink-200/50 sm:m-6 sm:p-8">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
             <div>
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20">
@@ -999,7 +1003,7 @@ export default function Billing() {
             </aside>
           </section>
 
-          <BillingHistory rows={rows} />
+          {can("billingHistory") && <BillingHistory rows={rows} />}
 
           <section className="hidden">
             <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
@@ -1458,14 +1462,14 @@ export default function Billing() {
                         )}
                       </strong>
                     </p>
-                    <button
+                    <PermissionButton module="billing" action={"edit"}
                       type="button"
                       onClick={applyDiscount}
                       disabled={submitting}
                       className="rounded-xl bg-violet-600 px-4 py-2.5 font-bold text-white disabled:opacity-50"
                     >
                       Apply Discount
-                    </button>
+                    </PermissionButton>
                   </div>
                 </section>
               )}
@@ -1638,7 +1642,7 @@ export default function Billing() {
                     </div>
                   </div>
 
-                  <button
+                  <PermissionButton module="billing" action={"complete"}
                     type="button"
                     onClick={collectPayment}
                     disabled={submitting}
@@ -1658,7 +1662,7 @@ export default function Billing() {
                     {submitting
                       ? "Processing payment..."
                       : "Confirm payment"}
-                  </button>
+                  </PermissionButton>
                 </section>
               ) : (
                 <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-6 text-center">
@@ -1677,10 +1681,10 @@ export default function Billing() {
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <p className="self-center text-sm font-semibold">OR number: {selectedInvoice.receipt_number || "Generated after payment"}</p>
-                <button type="button" onClick={printStatement}
+                <PermissionButton module="billing" action={"print"} type="button" onClick={printStatement}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-pink-600 px-5 py-3 font-semibold text-white">
                   <Printer size={18} /> Print Statement
-                </button>
+                </PermissionButton>
                 <button
                   type="button"
                   onClick={closeCashier}
@@ -1689,7 +1693,7 @@ export default function Billing() {
                   Close
                 </button>
 
-                <button
+                <PermissionButton module="billing" action={"print"}
                   type="button"
                   onClick={printReceipt}
                   disabled={
@@ -1700,7 +1704,7 @@ export default function Billing() {
                   <Printer size={18} />
 
                   Print latest receipt
-                </button>
+                </PermissionButton>
               </div>
             </div>
           </div>

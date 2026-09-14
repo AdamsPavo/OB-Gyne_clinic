@@ -1,3 +1,6 @@
+import LaboratoryProcedureChecklist from "../components/LaboratoryProcedureChecklist";
+import { can } from "../auth";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useState } from "react";
 import {
   FlaskConical,
@@ -11,7 +14,7 @@ import { api } from "../api/client";
 import {
   printLaboratoryRequest,
   printPrescription,
-} from "../utils/print";
+} from "../utils/permissionedPrint";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -35,15 +38,16 @@ const createBlankForm = () => ({
   notes: "",
   medicineItems: [{ ...blankMedicine }],
   labItems: [{ ...blankLab }],
+  selectedLabItems: [],
 });
 
-export default function Prescriptions() {
+export default function Prescriptions({ laboratoryOnly = false }) {
   const [patients, setPatients] = useState([]);
   const [cases, setCases] = useState([]);
   const [records, setRecords] = useState([]);
   const [labs, setLabs] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
-  const [tab, setTab] = useState("rx");
+  const [tab, setTab] = useState(laboratoryOnly ? "lab" : "rx");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(createBlankForm);
@@ -53,9 +57,9 @@ export default function Prescriptions() {
       const [patientsData, prescriptions, laboratories, inventory] =
         await Promise.all([
           api("/patients"),
-          api("/prescriptions"),
-          api("/laboratory-requests"),
-          api("/inventory/overview"),
+          can("prescriptions") ? api("/prescriptions") : Promise.resolve([]),
+          can("laboratory") ? api("/laboratory-requests") : Promise.resolve([]),
+          can("prescriptions") ? api("/inventory/overview") : Promise.resolve({items:[]}),
         ]);
 
       setPatients(Array.isArray(patientsData) ? patientsData : []);
@@ -128,6 +132,21 @@ export default function Prescriptions() {
             ),
     }));
   };
+
+  const toggleLabProcedure = (testName) => {
+    setForm((current) => ({
+      ...current,
+      selectedLabItems: current.selectedLabItems.some((item) => item.test_name === testName)
+        ? current.selectedLabItems.filter((item) => item.test_name !== testName)
+        : [...current.selectedLabItems, { test_name: testName }],
+    }));
+  };
+
+  const selectedLabNames = [...new Set(
+    [...form.selectedLabItems, ...form.labItems]
+      .map((item) => item.test_name.trim())
+      .filter(Boolean),
+  )];
 
   const updateLab = (index, value) => {
     setForm((current) => ({
@@ -204,11 +223,7 @@ export default function Prescriptions() {
           `${result.prescription_number} saved and linked to the selected case.`,
         );
       } else {
-        const items = form.labItems
-          .map((item) => ({
-            test_name: item.test_name.trim(),
-          }))
-          .filter((item) => item.test_name);
+        const items = selectedLabNames.map((test_name) => ({ test_name }));
 
         if (!items.length) {
           throw new Error(
@@ -348,10 +363,10 @@ export default function Prescriptions() {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Sidebar activeItem="Prescriptions" />
+      <Sidebar activeItem={laboratoryOnly ? "Laboratory Requests" : "Prescriptions"} />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
           <h1 className="text-3xl font-bold">
             Prescriptions & Laboratory
           </h1>
@@ -368,7 +383,7 @@ export default function Prescriptions() {
             className="mx-auto w-full rounded-3xl bg-white p-6 shadow-sm"
           >
             <div className="flex rounded-xl bg-slate-100 p-1">
-              <button
+              <PermissionButton module="prescriptions"
                 type="button"
                 onClick={() => changeTab("rx")}
                 className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
@@ -378,9 +393,9 @@ export default function Prescriptions() {
                 }`}
               >
                 Prescription
-              </button>
+              </PermissionButton>
 
-              <button
+              <PermissionButton module="laboratory" action={"view"}
                 type="button"
                 onClick={() => changeTab("lab")}
                 className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
@@ -390,7 +405,7 @@ export default function Prescriptions() {
                 }`}
               >
                 Laboratory
-              </button>
+              </PermissionButton>
             </div>
 
             <div className="mt-5 flex items-center gap-3">
@@ -419,7 +434,8 @@ export default function Prescriptions() {
               </div>
             </div>
 
-            <label className="mt-5 block text-sm font-medium text-slate-600">
+            <div className={tab === "lab" ? "mt-4 grid gap-3 sm:grid-cols-2" : "mt-5 space-y-4"}>
+            <label className="block text-sm font-medium text-slate-600">
               Patient
 
               <select
@@ -434,14 +450,14 @@ export default function Prescriptions() {
 
                 {patients.map((patient) => (
                   <option key={patient.id} value={patient.id}>
-                    {patient.patient_number} — {patient.last_name},{" "}
+                    {patient.patient_number} â€” {patient.last_name},{" "}
                     {patient.first_name}
                   </option>
                 ))}
               </select>
             </label>
 
-            <label className="mt-4 block text-sm font-medium text-slate-600">
+            <label className="block text-sm font-medium text-slate-600">
               Consultation case
 
               <select
@@ -455,14 +471,14 @@ export default function Prescriptions() {
 
                 {cases.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.case_number} —{" "}
+                    {item.case_number} â€”{" "}
                     {item.consultation_date?.slice(0, 10)}
                   </option>
                 ))}
               </select>
             </label>
 
-            <label className="mt-4 block text-sm font-medium text-slate-600">
+            <label className="block text-sm font-medium text-slate-600">
               {tab === "rx" ? "Issued date" : "Requested date"}
 
               <input
@@ -474,7 +490,7 @@ export default function Prescriptions() {
               />
             </label>
 
-            <label className="mt-4 block text-sm font-medium text-slate-600">
+            <label className="block text-sm font-medium text-slate-600">
               {tab === "rx" ? "Diagnosis" : "Clinical indication"}
 
               <input
@@ -483,6 +499,8 @@ export default function Prescriptions() {
                 className="mt-1 w-full rounded-xl border border-slate-200 p-2.5"
               />
             </label>
+
+            </div>
 
             {tab === "rx" ? (
               <div className="mt-5">
@@ -557,7 +575,7 @@ export default function Prescriptions() {
               <div className="mt-5">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="font-bold text-slate-700">
-                    Laboratory tests
+                    Laboratory procedures
                   </h3>
 
                   <button
@@ -566,10 +584,14 @@ export default function Prescriptions() {
                     className="inline-flex items-center gap-2 rounded-xl border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50"
                   >
                     <Plus size={16} />
-                    Add test
+                    Add other test
                   </button>
                 </div>
 
+                <p className="mt-2 text-sm text-slate-500">
+                  Choose a category or search to find a procedure. Selections stay checked when you switch categories.
+                </p>
+                <LaboratoryProcedureChecklist compact items={form.selectedLabItems} onToggle={toggleLabProcedure} />
                 <div className="mt-4 space-y-3">
                   {form.labItems.map((item, index) => (
                     <div
@@ -577,14 +599,14 @@ export default function Prescriptions() {
                       className="flex items-end gap-3 rounded-2xl border border-slate-200 p-4"
                     >
                       <label className="flex-1 text-sm font-medium text-slate-600">
-                        Test {index + 1}
+                        Other laboratory procedure {index + 1}
 
                         <input
                           value={item.test_name}
                           onChange={(event) =>
                             updateLab(index, event.target.value)
                           }
-                          placeholder="Example: Complete blood count"
+                          placeholder="Enter another procedure not listed above"
                           className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5"
                         />
                       </label>
@@ -592,12 +614,25 @@ export default function Prescriptions() {
                       <button
                         type="button"
                         onClick={() => removeLab(index)}
+                        aria-label={`Remove other laboratory procedure ${index + 1}`}
                         className="rounded-lg p-2.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                       >
                         <Trash2 size={17} />
                       </button>
                     </div>
                   ))}
+                </div>
+                <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="text-sm font-semibold text-blue-800" aria-live="polite">
+                    Selected procedures: {selectedLabNames.length}
+                  </p>
+                  {selectedLabNames.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedLabNames.map((name) => (
+                        <span key={name} className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">{name}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -613,7 +648,7 @@ export default function Prescriptions() {
               />
             </label>
 
-            <button
+            <PermissionButton module={tab === "rx" ? "prescriptions" : "laboratory"} action={"create"}
               type="submit"
               disabled={saving}
               className={`mt-5 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -631,7 +666,7 @@ export default function Prescriptions() {
                       ? "prescription"
                       : "laboratory request"
                   }`}
-            </button>
+            </PermissionButton>
 
             {message && (
               <p className="mt-4 rounded-xl bg-teal-50 p-3 text-sm text-teal-700">
@@ -710,34 +745,34 @@ export default function Prescriptions() {
                         </td>
 
                         <td className="whitespace-nowrap p-3 text-right">
-                          <button
+                          <PermissionButton module={tab === "rx" ? "prescriptions" : "laboratory"} action={"print"}
                             type="button"
                             onClick={() => print(record)}
                             className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm"
                           >
                             <Printer size={15} />
                             Print
-                          </button>
+                          </PermissionButton>
 
                           {tab === "rx" && (
-                            <button
+                            <PermissionButton module="prescriptions" action={"complete"}
                               type="button"
                               onClick={() => dispense(record)}
                               className="ml-2 inline-flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
                             >
                               <Pill size={15} />
                               Dispense
-                            </button>
+                            </PermissionButton>
                           )}
 
-                          <button
+                          <PermissionButton module={tab === "rx" ? "prescriptions" : "laboratory"} action={"delete"}
                             type="button"
                             onClick={() => remove(record)}
                             className="ml-2 inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-sm text-rose-700 hover:bg-rose-50"
                           >
                             <Trash2 size={15} />
                             Delete
-                          </button>
+                          </PermissionButton>
                         </td>
                       </tr>
                     ))

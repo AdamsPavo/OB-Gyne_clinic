@@ -1,3 +1,5 @@
+import { can } from "../auth";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -17,7 +19,7 @@ import {
 import BillingHistory from "../components/BillingHistory";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
-import { printCase } from "../utils/print";
+import { printCase, printPatientRecord } from "../utils/permissionedPrint";
 
 const dash = (value) => value || "—";
 
@@ -67,8 +69,8 @@ export default function PatientProfile() {
       const [profile, encounters, billingHistory] =
         await Promise.all([
           api(`/patients/${id}`),
-          api(`/patients/${id}/cases`),
-          api(`/patients/${id}/billing-history`),
+          can("consultations") ? api(`/patients/${id}/cases`) : Promise.resolve([]),
+          can("billingHistory") ? api(`/patients/${id}/billing-history`) : Promise.resolve({rows:[],summary:{}}),
         ]);
 
       setPatient(profile);
@@ -349,7 +351,7 @@ export default function PatientProfile() {
       <Sidebar activeItem="Patients" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
           <Link
             to="/patients"
             className="inline-flex items-center gap-1 text-sm text-pink-100 transition hover:text-white"
@@ -370,17 +372,17 @@ export default function PatientProfile() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <button
+            <div className="flex flex-wrap gap-3"><PermissionButton module="patients" action="print" onClick={() => printPatientRecord(patient)} className="rounded-xl bg-white px-4 py-2.5 font-semibold text-pink-600">Print patient record</PermissionButton>
+              <PermissionButton module="patients" action={"edit"}
                 type="button"
                 onClick={openEditForm}
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 font-semibold text-pink-600 shadow-sm transition hover:bg-pink-50"
               >
                 <Edit size={18} />
                 Edit patient
-              </button>
+              </PermissionButton>
 
-              <button
+              <PermissionButton module="patients" action={"delete"}
                 type="button"
                 onClick={deletePatient}
                 disabled={deleting}
@@ -391,7 +393,7 @@ export default function PatientProfile() {
                 {deleting
                   ? "Deleting..."
                   : "Delete patient"}
-              </button>
+              </PermissionButton>
             </div>
           </div>
         </header>
@@ -422,14 +424,14 @@ export default function PatientProfile() {
                 </p>
               </div>
 
-              <button
+              <PermissionButton module="patients" action={"edit"}
                 type="button"
                 onClick={openEditForm}
                 className="inline-flex items-center gap-2 rounded-xl border border-pink-200 px-4 py-2 text-sm font-semibold text-pink-600 transition hover:bg-pink-50"
               >
                 <Edit size={16} />
                 Edit
-              </button>
+              </PermissionButton>
             </div>
 
             <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -536,7 +538,7 @@ export default function PatientProfile() {
                             Open
                           </Link>
 
-                          <button
+                          <PermissionButton module="consultations" action={"print"}
                             type="button"
                             onClick={() =>
                               printConsultation(
@@ -547,7 +549,7 @@ export default function PatientProfile() {
                           >
                             <Printer size={15} />
                             Print
-                          </button>
+                          </PermissionButton>
                         </td>
                       </tr>
                     ))
@@ -567,7 +569,7 @@ export default function PatientProfile() {
             </div>
           </section>
 
-          <BillingHistory rows={(billing.rows || []).map(invoice => ({...invoice, patient_name:[patient.first_name,patient.middle_name,patient.last_name].filter(Boolean).join(" "),patient_number:patient.patient_number}))} />
+          {can("billingHistory") && <BillingHistory rows={(billing.rows || []).map(invoice => ({...invoice, patient_name:[patient.first_name,patient.middle_name,patient.last_name].filter(Boolean).join(" "),patient_number:patient.patient_number}))} />}
         </main>
       </div>
 
@@ -716,7 +718,7 @@ export default function PatientProfile() {
                 Cancel
               </button>
 
-              <button
+              <PermissionButton module="patients" action={"edit"}
                 type="submit"
                 disabled={saving}
                 className="inline-flex items-center gap-2 rounded-xl bg-pink-600 px-5 py-2.5 font-semibold text-white transition hover:bg-pink-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -726,7 +728,7 @@ export default function PatientProfile() {
                 {saving
                   ? "Saving..."
                   : "Save changes"}
-              </button>
+              </PermissionButton>
             </div>
           </form>
         </div>

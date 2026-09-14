@@ -1,3 +1,6 @@
+import LaboratoryProcedureChecklist from "../components/LaboratoryProcedureChecklist";
+import { can } from "../auth";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -141,67 +144,6 @@ const blankMedicine = {
   instructions: "",
 };
 
-const laboratoryProcedures = [
-  {
-    category: "Hematology",
-    tests: [
-      "Complete Blood Count (CBC)",
-      "Hemoglobin and Hematocrit",
-      "Platelet Count",
-      "Blood Typing",
-      "Clotting Time",
-      "Bleeding Time",
-    ],
-  },
-  {
-    category: "Urinalysis and Stool Examination",
-    tests: [
-      "Urinalysis",
-      "Urine Pregnancy Test",
-      "Fecalysis",
-      "Occult Blood Test",
-    ],
-  },
-  {
-    category: "Blood Chemistry",
-    tests: [
-      "Fasting Blood Sugar (FBS)",
-      "Random Blood Sugar (RBS)",
-      "HbA1c",
-      "Blood Urea Nitrogen (BUN)",
-      "Creatinine",
-      "Uric Acid",
-      "Lipid Profile",
-      "SGPT / ALT",
-      "SGOT / AST",
-    ],
-  },
-  {
-    category: "Serology and Immunology",
-    tests: [
-      "HBsAg",
-      "HIV Screening",
-      "VDRL / RPR",
-      "Dengue Test",
-      "Thyroid Function Test",
-      "Rubella IgG",
-      "Toxoplasma Test",
-    ],
-  },
-  {
-    category: "OB-GYN Procedures",
-    tests: [
-      "Pap Smear",
-      "Vaginal Smear",
-      "Cervical Culture",
-      "High Vaginal Swab",
-      "Beta hCG",
-      "Pelvic Ultrasound",
-      "Transvaginal Ultrasound",
-      "Obstetric Ultrasound",
-    ],
-  },
-];
 
 export default function Consultations() {
   const navigate = useNavigate();
@@ -461,6 +403,7 @@ export default function Consultations() {
       setPregnancyContext({ patientId, pregnancy: null, error: "", loading: true });
       try {
         const pregnancyId = editingCase?.prenatal_record?.pregnancy_id || pregnancyIdFromUrl;
+        if (!can("prenatal")) return;
         const response = pregnancyId ? { pregnancy: await api(`/pregnancies/${pregnancyId}`) } : await api(`/pregnancies/current/${patientId}`);
         if (cancelled) return;
         const pregnancy = response.pregnancy;
@@ -742,6 +685,10 @@ export default function Consultations() {
     setResult("");
 
     try {
+      if (!can("consultations", editCaseId ? "edit" : "create")) throw new Error("You do not have permission to save consultations.");
+      if (isPrenatal && !can("prenatal", editCaseId ? "edit" : "create")) throw new Error("Prenatal access is required for this service.");
+      if (prescription.items?.some(item => item.medicine_name?.trim()) && !can("prescriptions", "create")) throw new Error("Prescription creation permission is required.");
+      if ((laboratory.items?.length || laboratory.other_test?.trim()) && !can("laboratory", "create")) throw new Error("Laboratory creation permission is required.");
       if (!form.patient_id) {
         throw new Error(
           "Please select a patient.",
@@ -830,6 +777,7 @@ export default function Consultations() {
         delete body.service_id;
         delete body.appointment_id;
       }
+      if (!can("laboratory", "edit")) delete body.lab_results;
       const updatingId = editCaseId || pendingCase.current?.id;
       if (updatingId) { delete body.service_type; delete body.service_id; delete body.appointment_id; }
       const savedCase = await api(updatingId ? `/cases/${updatingId}` : "/cases", {
@@ -1170,7 +1118,7 @@ export default function Consultations() {
       <Sidebar activeItem="Consultations" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white sm:m-6">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white sm:m-6">
           <Link
             to="/appointments"
             className="inline-flex items-center gap-2 text-sm text-teal-100 transition hover:text-white"
@@ -2121,67 +2069,10 @@ export default function Consultations() {
                 </label>
               </div>
 
-              <div className="mt-4 space-y-3">
-                {laboratoryProcedures.map(
-                  (group) => (
-                    <div
-                      key={group.category}
-                      className="rounded-2xl border border-slate-200 p-3"
-                    >
-                      <h3 className="font-bold text-slate-700">
-                        {group.category}
-                      </h3>
-
-                      <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                        {group.tests.map(
-                          (testName) => {
-                            const checked =
-                              laboratory.items.some(
-                                (
-                                  item,
-                                ) =>
-                                  item.test_name ===
-                                  testName,
-                              );
-
-                            return (
-                              <label
-                                key={
-                                  testName
-                                }
-                                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition ${
-                                  checked
-                                    ? "border-blue-300 bg-blue-50 text-blue-800"
-                                    : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/50"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={
-                                    checked
-                                  }
-                                  onChange={() =>
-                                    toggleLabProcedure(
-                                      testName,
-                                    )
-                                  }
-                                  className="h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                />
-
-                                <span className="font-medium">
-                                  {
-                                    testName
-                                  }
-                                </span>
-                              </label>
-                            );
-                          },
-                        )}
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
+              <LaboratoryProcedureChecklist
+                items={laboratory.items}
+                onToggle={toggleLabProcedure}
+              />
 
               <label className="mt-5 block text-sm font-medium text-slate-600">
                 Other laboratory procedure
@@ -2266,7 +2157,7 @@ export default function Consultations() {
                 Cancel
               </Link>
 
-              <button
+              <PermissionButton module="consultations" action={editCaseId ? "edit" : "create"}
                 type="submit"
                 disabled={saving || historyLoading || pregnancyLoading || (isPrenatal && Boolean(pregnancyContext.error)) || (Boolean(editCaseId) && (!editingCase || editLoadFailed))}
                 className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-3 font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2276,7 +2167,7 @@ export default function Consultations() {
                 {saving
                   ? "Saving all records..."
                   : editCaseId ? "Save changes and new requests" : "Save consultation and requests"}
-              </button>
+              </PermissionButton>
             </div>
           </form>
         </main>

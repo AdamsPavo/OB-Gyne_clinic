@@ -1,6 +1,7 @@
+import PermissionButton from "./PermissionButton";
 import { useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import { printStatementOfAccount } from "../utils/print";
+import { printStatementOfAccount } from "../utils/permissionedPrint";
 const money = value => new Intl.NumberFormat("en-PH", {style:"currency",currency:"PHP"}).format(Number(value || 0));
 const date = value => value ? String(value).slice(0,10) : "-";
 const status = bill => bill.payment_status === "Cancelled" ? "Cancelled" : Number(bill.paid_amount)>Number(bill.total_amount) ? "Overpaid" : Number(bill.paid_amount)===Number(bill.total_amount) ? "Paid" : Number(bill.paid_amount)>0 ? "Partially Paid" : "Unpaid";
@@ -27,7 +28,7 @@ export default function BillingHistory({ rows }) {
    <h4 className="font-bold">Payment history</h4>{detail.payments.length?detail.payments.map(payment=><p key={payment.id} className="mt-2 text-sm">{date(payment.payment_date)} - {payment.receipt_number||payment.reference_number||"Payment"} - {payment.payment_method} - {money(payment.amount)} {payment.received_by?`- Received by ${payment.received_by}`:""}</p>):<p className="text-sm text-slate-500">No payment entries recorded.</p>}
    {!!detail.voided_items?.length&&<details className="mt-5"><summary>Voided charges</summary>{detail.voided_items.map(item=><p key={item.id}>{item.description} - {money(item.final_amount)} - {item.remarks}</p>)}</details>}
    <details className="mt-5"><summary>Audit history ({detail.audit?.length||0})</summary>{detail.audit?.map(entry=><details key={entry.id} className="my-2 rounded border p-2 text-xs"><summary>{entry.recorded_at} - {entry.table_name} - {entry.action}</summary><pre className="overflow-auto whitespace-pre-wrap">{JSON.stringify({before:entry.old_record?JSON.parse(entry.old_record):null,after:JSON.parse(entry.new_record)},null,2)}</pre></details>)}</details>
-   <button onClick={()=>printStatementOfAccount(detail)} className="mt-6 rounded-xl bg-pink-600 px-5 py-3 font-semibold text-white">Print / Reprint SOA</button>
+   <PermissionButton module="billingHistory" action="print" onClick={()=>printStatementOfAccount(detail, "billingHistory")} className="mt-6 rounded-xl bg-pink-600 px-5 py-3 font-semibold text-white">Print / Reprint SOA</PermissionButton>
   </div></div>}
  </section>;
 }

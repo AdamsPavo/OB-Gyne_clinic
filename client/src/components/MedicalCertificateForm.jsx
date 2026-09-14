@@ -1,6 +1,8 @@
+import { can } from "../auth";
+import PermissionButton from "./PermissionButton";
 import { useState } from "react";
 import { api } from "../api/client";
-import { printMedicalCertificate } from "../utils/print";
+import { printMedicalCertificate } from "../utils/permissionedPrint";
 import PatientSearch from "./PatientSearch";
 import clinicLogo from "../assets/OBLOGO.png";
 
@@ -9,7 +11,7 @@ const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Man
 
 export default function MedicalCertificateForm({ charge, patients = [], onClose, onSaved, onDraftSave }) {
   const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
-  const canEdit = ["doctor", "admin"].includes(user.role);
+  const canEdit = can("charges", "edit");
   const draft = Boolean(onDraftSave);
   const initial = typeof charge.certificate === "string" ? JSON.parse(charge.certificate) : charge.certificate || null;
   const [saved, setSaved] = useState(initial);
@@ -69,7 +71,7 @@ export default function MedicalCertificateForm({ charge, patients = [], onClose,
       </fieldset>
       <div className="mt-5 flex flex-wrap gap-3">
         {canEdit && (editing ? <button disabled={busy} className="rounded-xl bg-violet-600 px-4 py-2 font-semibold text-white">{busy ? "Saving..." : draft ? "Use certificate & return to charges" : "Save certificate"}</button> : <button type="button" onClick={() => setEditing(true)} className="rounded-xl border px-4 py-2">Edit certificate</button>)}
-        {(canEdit || saved) && <button type="button" disabled={busy} onClick={print} className="rounded-xl bg-slate-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Print certificate</button>}
+        {(canEdit || saved) && <PermissionButton module="charges" action="print" type="button" disabled={busy} onClick={print} className="rounded-xl bg-slate-800 px-4 py-2 font-semibold text-white disabled:opacity-50">Print certificate</PermissionButton>}
       </div>
       {draft && <p className="mt-3 text-sm text-slate-500">The certificate is saved with the charge when you select Add to Patient Bill.</p>}
     </form>

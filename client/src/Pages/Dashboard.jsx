@@ -1,3 +1,4 @@
+import { can } from "../auth";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -82,6 +83,7 @@ export default function Dashboard() {
 
     return [
       {
+        module: "patients",
         label: "Total Patients",
         value: Number(data.totalPatients || 0),
         description: "Active patient records",
@@ -90,6 +92,7 @@ export default function Dashboard() {
         accentClass: "from-pink-500 to-rose-400",
       },
       {
+        module: "consultations",
         label: "Today's Consultations",
         value: Number(data.consultationsToday || 0),
         description: "Consultations recorded today",
@@ -98,6 +101,7 @@ export default function Dashboard() {
         accentClass: "from-teal-600 to-cyan-500",
       },
       {
+        module: "billing",
         label: "Today's Income",
         value: currency.format(
           Number(data.incomeToday || 0),
@@ -110,6 +114,7 @@ export default function Dashboard() {
           "from-emerald-600 to-green-500",
       },
       {
+        module: "laboratory",
         label: "Pending Laboratory",
         value: Number(data.pendingLabs || 0),
         description: "Requested or pending results",
@@ -119,6 +124,7 @@ export default function Dashboard() {
           "from-amber-500 to-orange-400",
       },
       {
+        module: "inventory",
         label: "Inventory Items",
         value: Number(data.inventory?.total_items || 0),
         description: `${Number(data.inventory?.low_stock || 0)} low-stock items`,
@@ -127,6 +133,7 @@ export default function Dashboard() {
         accentClass: "from-cyan-600 to-blue-500",
       },
       {
+        module: "inventory",
         label: "Out of Stock",
         value: Number(data.inventory?.out_of_stock || 0),
         description: `${Number(data.inventory?.near_expiration || 0)} items near expiration`,
@@ -134,7 +141,7 @@ export default function Dashboard() {
         iconClass: "bg-red-100 text-red-700",
         accentClass: "from-red-600 to-orange-500",
       },
-    ];
+    ].filter(card => can(card.module));
   }, [data]);
 
   const recentPatients =
@@ -147,7 +154,7 @@ export default function Dashboard() {
       <Sidebar activeItem="Dashboard" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 overflow-hidden rounded-3xl bg-linear-to-r from-pink-600 via-rose-500 to-orange-400 text-white shadow-xl shadow-pink-200/60 sm:m-6">
+        <header className="clinic-page-header clinic-dashboard-header m-4 overflow-hidden rounded-3xl bg-linear-to-r from-pink-600 via-rose-500 to-orange-400 text-white shadow-xl shadow-pink-200/60 sm:m-6">
           <div className="relative p-6 sm:p-8">
             <div className="absolute -right-16 -top-16 h-52 w-52 rounded-full bg-white/10" />
             <div className="absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/10" />
@@ -202,9 +209,9 @@ export default function Dashboard() {
             </div>
           )}
 
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {loading
-              ? Array.from({ length: 4 }).map(
+              ? Array.from({ length: 6 }).map(
                   (_, index) => (
                     <div
                       key={index}
@@ -222,10 +229,10 @@ export default function Dashboard() {
                   return (
                     <article
                       key={card.label}
-                      className="group relative overflow-hidden rounded-3xl bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+                      className="clinic-stat-card relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-5 shadow-sm"
                     >
                       <div
-                        className={`absolute inset-x-0 top-0 h-1 bg-linear-to-r ${card.accentClass}`}
+                        className={`absolute bottom-4 left-0 top-4 w-0.5 bg-linear-to-b ${card.accentClass}`}
                       />
 
                       <div className="flex items-start justify-between gap-4">
@@ -234,11 +241,11 @@ export default function Dashboard() {
                             {card.label}
                           </p>
 
-                          <p className="mt-2 truncate text-3xl font-bold text-slate-900">
+                          <p className="mt-2 break-words text-2xl font-bold tracking-tight text-slate-900 2xl:text-3xl">
                             {card.value}
                           </p>
 
-                          <p className="mt-2 text-xs text-slate-400">
+                          <p className="mt-2 text-xs text-slate-500">
                             {card.description}
                           </p>
                         </div>
@@ -256,7 +263,7 @@ export default function Dashboard() {
 
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <QuickAction
-              title="Add Patient"
+              module="patients" title="Add Patient"
               description="Register a new patient"
               icon={UserPlus}
               onClick={() =>
@@ -266,7 +273,7 @@ export default function Dashboard() {
             />
 
             <QuickAction
-              title="New Appointment"
+              module="appointments" title="New Appointment"
               description="Schedule a clinic visit"
               icon={CalendarDays}
               onClick={() =>
@@ -276,7 +283,7 @@ export default function Dashboard() {
             />
 
             <QuickAction
-              title="New Consultation"
+              module="consultations" title="New Consultation"
               description="Open consultation form"
               icon={FilePlus2}
               onClick={() =>
@@ -286,7 +293,7 @@ export default function Dashboard() {
             />
 
             <QuickAction
-              title="Billing and Cashier"
+              module="billing" title="Billing and Cashier"
               description="Process clinic payments"
               icon={PhilippinePeso}
               onClick={() =>
@@ -297,7 +304,7 @@ export default function Dashboard() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+            <div hidden={!can("patients")} className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-50 text-pink-600">
@@ -361,7 +368,7 @@ export default function Dashboard() {
                                 {patient.first_name}
                               </p>
 
-                              <p className="truncate text-xs text-slate-400">
+                              <p className="truncate text-xs text-slate-500">
                                 {patient.contact_number ||
                                   "No contact number"}
                               </p>
@@ -385,7 +392,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+            <div hidden={!can("consultations")} className="rounded-3xl bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
@@ -442,7 +449,7 @@ export default function Dashboard() {
                                 {followUp.first_name}
                               </p>
 
-                              <p className="text-xs text-slate-400">
+                              <p className="text-xs text-slate-500">
                                 {followUp.case_number}
                               </p>
                             </div>
@@ -455,7 +462,7 @@ export default function Dashboard() {
                               )}
                             </p>
 
-                            <p className="mt-1 text-xs text-slate-400">
+                            <p className="mt-1 text-xs text-slate-500">
                               Follow-up date
                             </p>
                           </div>
@@ -476,7 +483,7 @@ export default function Dashboard() {
 
           <section className="grid gap-6 lg:grid-cols-3">
             <ClinicOverviewCard
-              title="Patient Records"
+              module="patients" title="Patient Records"
               value={data?.totalPatients || 0}
               description="Total active patients in the clinic database."
               icon={Users}
@@ -484,7 +491,7 @@ export default function Dashboard() {
             />
 
             <ClinicOverviewCard
-              title="Clinic Activity"
+              module="consultations" title="Clinic Activity"
               value={
                 data?.consultationsToday || 0
               }
@@ -494,7 +501,7 @@ export default function Dashboard() {
             />
 
             <ClinicOverviewCard
-              title="Laboratory Queue"
+              module="laboratory" title="Laboratory Queue"
               value={data?.pendingLabs || 0}
               description="Laboratory requests awaiting completion."
               icon={FlaskConical}
@@ -508,12 +515,14 @@ export default function Dashboard() {
 }
 
 function QuickAction({
+  module,
   title,
   description,
   icon: Icon,
   onClick,
   className,
 }) {
+  if (!can(module)) return null;
   return (
     <button
       type="button"
@@ -546,13 +555,14 @@ function QuickAction({
   );
 }
 
-function ClinicOverviewCard({
+function ClinicOverviewCard({ module,
   title,
   value,
   description,
   icon: Icon,
   className,
 }) {
+  if (!can(module)) return null;
   return (
     <article className="rounded-3xl bg-white p-5 shadow-sm">
       <div
@@ -599,7 +609,7 @@ function EmptyState({
 function ListSkeleton() {
   return (
     <div className="space-y-3">
-      {Array.from({ length: 4 }).map(
+      {Array.from({ length: 6 }).map(
         (_, index) => (
           <div
             key={index}

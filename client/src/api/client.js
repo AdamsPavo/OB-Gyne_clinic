@@ -1,13 +1,19 @@
+import { canRequest } from "../../../shared/permissions.mjs";
+import { getCurrentUser } from "../auth";
 // The local Express server is used by both Vite and the Electron renderer.
 // Override only for a deployed API by setting VITE_API_URL.
 const API_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:5000/api";
 
 export async function api(path, options = {}) {
+  if (!path.startsWith("/auth/") && !canRequest(getCurrentUser(), path, options.method || "GET", typeof options.body === "string" ? JSON.parse(options.body) : options.body)) {
+    throw new Error("You do not have permission to perform this action.");
+  }
   const token = localStorage.getItem("obgyn_token");
 
   const {
     headers: customHeaders = {},
+    responseType,
     body,
     ...requestOptions
   } = options;
@@ -33,6 +39,8 @@ export async function api(path, options = {}) {
     );
   }
 
+  if (response.ok && responseType === "blob") return response.blob();
+
   const contentType = response.headers.get("content-type") || "";
 
   let data = null;
@@ -51,11 +59,13 @@ export async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       data?.message ||
         data?.error ||
         `Request failed with status ${response.status}.`
     );
+    error.status = response.status;
+    throw error;
   }
 
   return data;

@@ -106,25 +106,13 @@ tbody tr:hover {
   background-color: rgba(253, 242, 248, .55);
 }
 
-dialog,
-[class*="shadow-2xl"] {
+dialog {
   animation: ui-enter 180ms ease-out;
 }
 
 @keyframes ui-enter {
   from { opacity: 0; transform: translateY(8px) scale(.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@media (max-width: 1023px) {
-  #root:has(aside) > div {
-    padding-top: 4rem;
-  }
-
-  #root:has(aside) h1 {
-    font-size: clamp(1.65rem, 7vw, 2.25rem);
-    line-height: 1.15;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -136,14 +124,181 @@ dialog,
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(219, 39, 119, 0.35);
+  background: #e879ad;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.9);
+}
+
+/* Shared clinic surfaces. Screen-only rules leave clinical print layouts intact. */
+@media screen {
+  :root {
+    --clinic-accent: #be185d;
+    --clinic-border: #f1dce7;
+    --clinic-canvas: #fff1f7;
+  }
+
+  body { background: var(--clinic-canvas); }
+  h1, h2, h3 { text-wrap: balance; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  input, textarea, select { accent-color: var(--clinic-accent); }
+  input::placeholder, textarea::placeholder { color: #788396; }
+
+  .clinic-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    flex: 0 0 252px;
+    flex-direction: column;
+    width: 252px;
+    height: 100dvh;
+    border-right: 1px solid var(--clinic-border);
+    background: linear-gradient(180deg, #fff5fa, #fce7f3);
+  }
+  .clinic-nav-label {
+    margin-bottom: 8px;
+    padding-inline: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: #788396;
+  }
+  .clinic-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 43px;
+    padding: 10px 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 500;
+    color: #596579;
+  }
+  .clinic-nav-item:hover { background: #fce7f3; color: #9d174d; }
+  .clinic-nav-item.is-active {
+    border-color: #db2777;
+    background: linear-gradient(110deg, #be185d, #db2777);
+    color: #fff;
+    box-shadow: 0 4px 12px #db277728;
+    font-weight: 650;
+  }
+  .clinic-nav-item.is-active > span:last-child { background-color: #fff; }
+  .clinic-sidebar-brand { background: linear-gradient(120deg, #be185d, #e11d48); }
+  .clinic-sidebar-brand :is(h1, p, button) { color: #fff; }
+  .clinic-mobile-header { display: none; }
+  .clinic-workspace-tabs { background: #fce7f3; border-color: #f9a8d4; }
+  .clinic-workspace-tab {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    max-width: 240px;
+    border-bottom: 2px solid transparent;
+    color: #64748b;
+  }
+  .clinic-workspace-tab:hover { background: #f8fafc; }
+  .clinic-workspace-tab.is-active { border-bottom-color: var(--clinic-accent); background: #fbcfe8; color: #9d174d; }
+  .clinic-workspace-content { background: var(--clinic-canvas); }
+  .clinic-workspace-content .bg-slate-50 { background-color: var(--clinic-canvas); }
+
+  .clinic-page-header {
+    border: 1px solid #ffffff30;
+    border-radius: 18px;
+    box-shadow: 0 8px 22px #9d174d18;
+  }
+  .clinic-page-header h1 {
+    font-size: clamp(1.6rem, 2.4vw, 2rem);
+    line-height: 1.2;
+    letter-spacing: -.035em;
+  }
+  .clinic-page-header > a:hover { text-decoration: underline; }
+  .clinic-page-header p:has(+ h1) {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .clinic-dashboard-header > div { padding: 24px; }
+  .clinic-dashboard-header h1 { margin-top: 0; }
+  .clinic-dashboard-header p.mt-3 { margin-top: 10px; max-width: 36rem; font-size: 14px; }
+  .clinic-dashboard-header .mt-5 { margin-top: 16px; background: #ffffff20; color: #fff; border: 1px solid #ffffff40; border-radius: 8px; font-size: 12px; }
+
+  .clinic-workspace-content :is(section, article, main > div, section > div, section > button).bg-white:is(.rounded-3xl, .rounded-2xl) {
+    border: 1px solid var(--clinic-border);
+    border-radius: 16px;
+    box-shadow: 0 2px 5px #17203303;
+  }
+  .clinic-workspace-content section > button.bg-white:hover {
+    border-color: #e8b3ca;
+    background-color: #fffbfd;
+    transform: none;
+    box-shadow: 0 3px 10px #17203308;
+  }
+  .clinic-workspace-content h2 { letter-spacing: -.02em; }
+  .clinic-workspace-content table { font-size: 13px; }
+  .clinic-workspace-content thead th {
+    border-bottom: 1px solid var(--clinic-border);
+    background: #fce7f3;
+    padding-block: 13px;
+    color: #9d174d;
+    font-size: 11px;
+    font-weight: 650;
+  }
+  .clinic-workspace-content tbody td { border-bottom: 1px solid #f0f1f5; }
+  .clinic-workspace-content tbody tr:last-child td { border-bottom: 0; }
+  .clinic-workspace-content tbody tr:hover { background-color: #fff7fb; }
+  .clinic-workspace-content :is(input, select, textarea)[class*="border"] { background-color: #fff; border-color: #dce0e8; }
+  .clinic-workspace-content :is(input, select, textarea)[class*="border"]:hover { border-color: #b3bac8; }
+  .clinic-workspace-content label:has(> input):focus-within { color: #9d174d; }
+  .clinic-workspace-content label:has(> input).border:focus-within { outline: 2px solid #be185d; outline-offset: 2px; }
+  .clinic-workspace-content .fixed.inset-0 > form { border: 1px solid #e7e8ee; border-radius: 20px; box-shadow: 0 24px 70px #0f172a26; }
+  .clinic-login > .absolute { pointer-events: none; }
+
+  @media (max-width: 1023px) {
+    .clinic-workspace { padding-top: 56px; }
+    .clinic-mobile-header {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 40;
+      display: flex;
+      height: 56px;
+      align-items: center;
+      justify-content: space-between;
+      padding-inline: 16px;
+      border-bottom: 1px solid var(--clinic-border);
+      background: #fce7f3;
+    }
+    .clinic-sidebar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      z-index: 50;
+      width: min(288px, 88vw);
+      transform: translateX(-100%);
+      visibility: hidden;
+      transition: transform 200ms ease, visibility 200ms;
+    }
+    .clinic-sidebar.is-open { transform: translateX(0); visibility: visible; box-shadow: 16px 0 48px #0f172a20; }
+    .clinic-workspace-tabs { top: 56px; }
+    .clinic-workspace-content .h-\[calc\(100dvh-3rem\)\] { height: calc(100dvh - 6.5rem); }
+    .clinic-page-header { border-radius: 14px; }
+  }
+  @media (max-width: 639px) {
+    .clinic-page-header { padding: 20px; }
+    .clinic-page-header.overflow-hidden { padding: 0; }
+    .clinic-dashboard-header > div { padding: 20px; }
+    .clinic-workspace-content table { font-size: 12px; }
+  }
 }

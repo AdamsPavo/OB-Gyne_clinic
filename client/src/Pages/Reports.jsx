@@ -1,3 +1,5 @@
+import { authorizedAction } from "../utils/permissionedPrint";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
@@ -285,7 +287,7 @@ export default function Reports() {
       <Sidebar activeItem="Reports" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white shadow-lg shadow-teal-200/50 sm:m-6 sm:p-8 print:m-0 print:rounded-none">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white shadow-lg shadow-teal-200/50 sm:m-6 sm:p-8 print:m-0 print:rounded-none">
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20">
@@ -324,14 +326,14 @@ export default function Reports() {
                 Refresh
               </button>
 
-              <button
+              <PermissionButton module="reports" action={"print"}
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => authorizedAction("reports", "print", () => window.print())}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 font-semibold text-teal-700 transition hover:bg-teal-50"
               >
                 <Printer size={18} />
                 Print
-              </button>
+              </PermissionButton>
             </div>
           </div>
         </header>

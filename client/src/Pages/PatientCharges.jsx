@@ -1,3 +1,4 @@
+import PermissionButton from "../components/PermissionButton";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PhilippinePeso, Plus, Search, X } from "lucide-react";
 import PatientSearch from "../components/PatientSearch";
@@ -60,7 +61,7 @@ export default function PatientCharges(){
 
  const list=useMemo(()=>charges.filter(c=>`${c.charge_number} ${c.patient_name} ${c.charge_name} ${c.invoice_number}`.toLowerCase().includes(search.toLowerCase())),[charges,search]);
  return <div className="flex min-h-screen bg-slate-50"><Sidebar activeItem="Other Charges"/><div className="min-w-0 flex-1">
-  <header className="m-4 rounded-3xl bg-linear-to-r from-indigo-700 via-violet-600 to-fuchsia-500 p-6 text-white shadow-xl shadow-violet-200/50 sm:m-6"><p className="text-sm text-violet-100">Billing add-ons and miscellaneous fees</p><h1 className="text-3xl font-bold">Other Charges</h1><p className="mt-2 text-violet-50">Add medical certificates, procedures, supplies, and any charge configured in Tools.</p></header>
+  <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-indigo-700 via-violet-600 to-fuchsia-500 p-6 text-white shadow-xl shadow-violet-200/50 sm:m-6"><p className="text-sm text-violet-100">Billing add-ons and miscellaneous fees</p><h1 className="text-3xl font-bold">Other Charges</h1><p className="mt-2 text-violet-50">Add medical certificates, procedures, supplies, and any charge configured in Tools.</p></header>
   <main className="space-y-6 px-4 pb-10 sm:px-6">{notice&&<div className="flex justify-between rounded-2xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800">{notice}<button onClick={()=>setNotice("")}><X size={17}/></button></div>}
    <section className="rounded-3xl bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center gap-3"><span className="rounded-2xl bg-violet-50 p-3 text-violet-700"><Plus/></span><div><h2 className="text-xl font-bold">Add Other Charge</h2><p className="text-sm text-slate-500">Prices come from Tools but may be adjusted for this transaction.</p></div></div>
     <form onSubmit={save} className="mt-6 space-y-6">
@@ -90,7 +91,7 @@ export default function PatientCharges(){
      </section>
      <div className="flex flex-col gap-4 rounded-2xl bg-violet-50 p-4 sm:flex-row sm:items-center sm:justify-between">
      <div className="flex items-center justify-between gap-6"><span className="text-sm font-bold text-violet-600">Total Charge</span><strong className="text-xl text-violet-800">{money(payableTotal)}</strong></div>
-     <div className="md:col-span-2 xl:col-span-3"><button disabled={saving||(!types.length&&!inventoryItems.length)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-bold text-white disabled:opacity-50 sm:w-auto"><PhilippinePeso size={18}/>{saving?"Adding...":"Add to Patient Bill"}</button>{!types.length&&!inventoryItems.length&&<p className="mt-2 text-sm text-amber-600">Add an active charge type or inventory item first.</p>}</div>
+     <div className="md:col-span-2 xl:col-span-3"><PermissionButton module="charges" action={"create"} disabled={saving||(!types.length&&!inventoryItems.length)} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-bold text-white disabled:opacity-50 sm:w-auto"><PhilippinePeso size={18}/>{saving?"Adding...":"Add to Patient Bill"}</PermissionButton>{!types.length&&!inventoryItems.length&&<p className="mt-2 text-sm text-amber-600">Add an active charge type or inventory item first.</p>}</div>
      </div>
     </form>
    </section>

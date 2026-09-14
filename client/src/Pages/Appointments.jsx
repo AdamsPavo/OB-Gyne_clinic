@@ -1,3 +1,5 @@
+import { can } from "../auth";
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -32,18 +34,6 @@ const createBlankForm = () => ({
   appointment_date: localDateTime(),
   status: "Scheduled",
 });
-
-const getLoggedInUser = () => {
-  try {
-    const savedUser =
-      localStorage.getItem("currentUser") ||
-      localStorage.getItem("user");
-
-    return savedUser ? JSON.parse(savedUser) : null;
-  } catch {
-    return null;
-  }
-};
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -88,21 +78,16 @@ export default function Appointments() {
   const [searchParams, setSearchParams] =
     useSearchParams();
 
-  const currentUser = getLoggedInUser();
 
-  const role = String(
-    currentUser?.role || "",
-  ).toLowerCase();
 
-  const isDoctor = ["admin", "doctor"].includes(role);
 
-  const isStaff =
-    role === "staff" ||
-    role === "secretary" ||
-    role === "admin";
+
+  const isDoctor = can("consultations", "create") && can("appointments", "complete");
+
+
 
   const canManageAppointments =
-    isDoctor || isStaff;
+    can("appointments", "create") || can("appointments", "edit");
 
   const selectedPatientFromUrl =
     searchParams.get("patient") || "";
@@ -590,7 +575,7 @@ export default function Appointments() {
                   <td className="whitespace-nowrap p-3 text-right">
                     {!completed &&
                       isDoctor && (
-                        <button
+                        <PermissionButton module="consultations" action={"create"}
                           type="button"
                           onClick={() =>
                             diagnosePatient(
@@ -610,13 +595,13 @@ export default function Appointments() {
                           />
 
                           Diagnose
-                        </button>
+                        </PermissionButton>
                       )}
 
                     {!completed &&
                       canManageAppointments && (
                         <>
-                          <button
+                          <PermissionButton module="appointments" action={"edit"}
                             type="button"
                             onClick={() =>
                               editAppointment(
@@ -629,9 +614,9 @@ export default function Appointments() {
                             <Edit
                               size={18}
                             />
-                          </button>
+                          </PermissionButton>
 
-                          <button
+                          <PermissionButton module="appointments" action={"delete"}
                             type="button"
                             onClick={() =>
                               deleteAppointment(
@@ -644,7 +629,7 @@ export default function Appointments() {
                             <Trash2
                               size={18}
                             />
-                          </button>
+                          </PermissionButton>
                         </>
                       )}
 
@@ -683,7 +668,7 @@ export default function Appointments() {
       <Sidebar activeItem="Appointments" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
+        <header className="clinic-page-header m-4 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-linear-to-r from-pink-600 to-rose-400 p-6 text-white sm:m-6">
           <div>
             <p className="text-sm text-pink-100">
               {isDoctor
@@ -703,7 +688,7 @@ export default function Appointments() {
           </div>
 
           {canManageAppointments && (
-            <button
+            <PermissionButton module="appointments" action={"create"}
               type="button"
               onClick={
                 openNewAppointment
@@ -712,7 +697,7 @@ export default function Appointments() {
             >
               <Plus size={19} />
               Add appointment
-            </button>
+            </PermissionButton>
           )}
         </header>
 
@@ -983,7 +968,7 @@ export default function Appointments() {
                 Cancel
               </button>
 
-              <button
+              <PermissionButton module="appointments" action={editingId ? "edit" : "create"}
                 type="submit"
                 disabled={saving}
                 className="rounded-xl bg-pink-600 px-5 py-2.5 font-semibold text-white disabled:opacity-60"
@@ -993,7 +978,7 @@ export default function Appointments() {
                   : editingId
                     ? "Update appointment"
                     : "Save appointment"}
-              </button>
+              </PermissionButton>
             </div>
           </form>
         </div>

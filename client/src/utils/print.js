@@ -521,8 +521,11 @@ const styles = `
   }
 `;
 
+let reservedPrintWindow = null;
+export const reservePrintWindow = (win) => { reservedPrintWindow = win; };
 const open = (title, body, className = "sheet") => {
-  const win = window.open("", "_blank");
+  const win = reservedPrintWindow || window.open("", "_blank");
+  reservedPrintWindow = null;
 
   if (!win) {
     window.alert(
@@ -919,3 +922,5 @@ export const printStatementOfAccount = (record) => {
     <footer class="footer"><span class="signature">Prepared by</span><span class="signature">Received by / Patient signature</span></footer>
   `,"sheet consultation-sheet");
 };
+
+export const printPatientRecord = record => open("Patient Record", `<h1>Patient Record</h1><h2>${esc([record.first_name,record.middle_name,record.last_name].filter(Boolean).join(" "))}</h2><dl>${["patient_number","birth_date","contact_number","address","blood_type","allergies","existing_illnesses","previous_surgeries","family_history","ob_history","pregnancy_history","notes"].map(key => `<dt><strong>${esc(key.replaceAll("_"," "))}</strong></dt><dd>${esc(record[key])}</dd>`).join("")}</dl>`);

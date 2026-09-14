@@ -1,3 +1,4 @@
+import PermissionButton from "../components/PermissionButton";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -10,13 +11,13 @@ import {
   useParams,
 } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
-import { hasRole } from "../auth";
+import { can } from "../auth";
 import { api } from "../api/client";
 import {
   printCase,
   printLaboratoryRequest,
   printPrescription,
-} from "../utils/print";
+} from "../utils/permissionedPrint";
 
 const dash = (value) => {
   if (
@@ -125,7 +126,7 @@ export default function CaseDetail() {
       <Sidebar activeItem="Consultations" />
 
       <div className="min-w-0 flex-1">
-        <header className="m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white sm:m-6">
+        <header className="clinic-page-header m-4 rounded-3xl bg-linear-to-r from-teal-700 to-teal-500 p-6 text-white sm:m-6">
           <Link
             to={`/patients/${record.patient_id}`}
             className="inline-flex items-center gap-2 text-sm text-teal-100 transition hover:text-white"
@@ -195,11 +196,11 @@ export default function CaseDetail() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-              {hasRole("admin", "doctor") && <Link to={`/consultations/new?edit=${id}`}
+              {can("consultations", "edit") && <Link to={`/consultations/new?edit=${id}`}
                 className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 font-semibold text-white">
                 <Pencil size={17} />Edit consultation
               </Link>}
-              <button
+              <PermissionButton module="consultations" action={"print"}
                 type="button"
                 onClick={() =>
                   printCase({
@@ -214,7 +215,7 @@ export default function CaseDetail() {
               >
                 <Printer size={17} />
                 Print consultation
-              </button>
+              </PermissionButton>
               </div>
             </div>
 
@@ -337,7 +338,7 @@ export default function CaseDetail() {
           </section>
 
           <Documents
-            title="Medicine prescriptions"
+            module="prescriptions" title="Medicine prescriptions"
             rows={prescriptions}
             number="prescription_number"
             itemName="medicine_name"
@@ -350,7 +351,7 @@ export default function CaseDetail() {
           />
 
           <Documents
-            title="Laboratory requests"
+            module="laboratory" title="Laboratory requests"
             rows={laboratoryRequests}
             number="request_number"
             itemName="test_name"
@@ -376,7 +377,7 @@ export default function CaseDetail() {
 
 function LabResults({ caseId, initialValue, hasSavedResults, onSaved }) {
   const [result, setResult] = useState(initialValue || "");
-  const [editing, setEditing] = useState(!hasSavedResults && !initialValue?.trim());
+  const [editing, setEditing] = useState(can("laboratory", "edit") && !hasSavedResults && !initialValue?.trim());
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -413,12 +414,12 @@ function LabResults({ caseId, initialValue, hasSavedResults, onSaved }) {
           placeholder="Type the laboratory results here..."
           className="mt-4 block w-full rounded-xl border border-slate-200 p-3 text-sm font-normal read-only:bg-slate-50" />
       </label>
-      {editing ? <button type="submit" disabled={saving} className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+      {editing ? <PermissionButton module="laboratory" action={"edit"} type="submit" disabled={saving} className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
         {saving ? "Saving..." : "Save lab results"}
-      </button> : <button type="button" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }}
+      </PermissionButton> : <PermissionButton module="laboratory" action={"edit"} type="button" onClick={() => { setEditing(true); setMessage(""); setFailed(false); }}
         className="mt-3 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white">
         Edit lab results
-      </button>}
+      </PermissionButton>}
       {message && <p role={failed ? "alert" : "status"} className={`mt-3 text-sm ${failed ? "text-red-600" : "text-teal-700"}`}>{message}</p>}
     </form>
   );
@@ -460,7 +461,7 @@ function Detail({
   );
 }
 
-function Documents({
+function Documents({ module,
   title,
   rows = [],
   number,
@@ -530,7 +531,7 @@ function Documents({
                   </td>
 
                   <td className="p-3 text-right">
-                    <button
+                    <PermissionButton module={module} action="print"
                       type="button"
                       onClick={() =>
                         onPrint(item)
@@ -541,7 +542,7 @@ function Documents({
                         size={16}
                       />
                       Print
-                    </button>
+                    </PermissionButton>
                   </td>
                 </tr>
               ))

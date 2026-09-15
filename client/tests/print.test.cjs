@@ -13,13 +13,17 @@ function consultationHtml(record) {
   return html;
 }
 
-test("print includes complete, escaped multiline lab results without a fixed-page container", () => {
+test("half-page consultation retains all escaped multiline lab results", () => {
   const findings = Array.from({ length: 150 }, (_, i) => `Test ${i}: <reported> & reviewed`).join("\n");
   const html = consultationHtml({ lab_results: findings });
   assert.ok(html.includes("Laboratory results"));
   assert.ok(html.includes("Test 149: &lt;reported&gt; &amp; reviewed"));
   assert.ok(!html.includes("<reported>"));
-  assert.ok(html.includes('<main class="sheet consultation-sheet">'));
+  assert.ok(html.includes('<main class="sheet consultation-sheet consultation-record-sheet">'));
+  assert.equal((html.match(/<main /g) || []).length, 1);
+  assert.equal((html.match(/<div class="consultation-print-area">/g) || []).length, 1);
+  assert.equal((html.match(/Physician signature/g) || []).length, 1);
+  assert.equal((html.match(/<div class="consultation-print-page">/g) || []).length, 1);
 });
 
 test("legacy test results print when no consultation results have been saved", () => {

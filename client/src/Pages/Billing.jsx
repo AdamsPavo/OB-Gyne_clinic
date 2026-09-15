@@ -923,15 +923,15 @@ export default function Billing() {
                     <DetailBox label="Consultation Date" value={formatDate(billingFocus.consultation_date || billingFocus.invoice_date)} />
                   </div>
 
-                  <div className="mt-6 overflow-x-auto">
+                  <div className="mt-6 max-h-[min(360px,45dvh)] overflow-auto overscroll-contain" tabIndex={0} role="region" aria-label="Selected patient charges">
                     <table className="w-full min-w-175 text-left">
                       <thead><tr className="border-b text-xs uppercase text-slate-400">
-                        <th className="p-3">Charge Description</th>
-                        <th className="p-3">Category</th>
-                        <th className="p-3 text-right">Quantity</th>
-                        <th className="p-3 text-right">Unit Price</th>
-                        <th className="p-3 text-right">Discount</th>
-                        <th className="p-3 text-right">Final Amount</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3">Charge Description</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3">Category</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">Quantity</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">Unit Price</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">Discount</th>
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">Final Amount</th>
                       </tr></thead>
                       <tbody>
                         {billingFocus.items?.length ? billingFocus.items.map((item) => (

@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  Link,
   useNavigate,
   useSearchParams,
 } from "react-router-dom";
@@ -480,31 +481,31 @@ export default function Appointments() {
     completed = false,
   }) => (
     <div
-      tabIndex={completed ? 0 : undefined}
-      role={completed ? "region" : undefined}
-      aria-label={completed ? "Completed consultations" : undefined}
-      className={completed ? "mt-6 min-h-0 overflow-auto overscroll-contain" : "mt-6 overflow-x-auto"}
+      tabIndex={0}
+      role="region"
+      aria-label={completed ? "Completed consultations" : "Active appointments"}
+      className="mt-6 max-h-[min(360px,45dvh)] min-h-0 overflow-auto overscroll-contain"
     >
       <table className="w-full min-w-212.5 text-left">
-        <thead className={completed ? "sticky top-0 z-10 bg-white" : undefined}>
+        <thead className="sticky top-0 z-10 bg-pink-100">
           <tr className="border-b text-xs uppercase text-slate-400">
-            <th className="p-3">
+            <th className="sticky top-0 z-10 bg-pink-100 p-3">
               Patient
             </th>
 
-            <th className="p-3">
+            <th className="sticky top-0 z-10 bg-pink-100 p-3">
               Service
             </th>
 
-            <th className="p-3">
+            <th className="sticky top-0 z-10 bg-pink-100 p-3">
               Date and time
             </th>
 
-            <th className="p-3">
+            <th className="sticky top-0 z-10 bg-pink-100 p-3">
               Status
             </th>
 
-            <th className="p-3 text-right">
+            <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">
               Action
             </th>
           </tr>
@@ -516,7 +517,10 @@ export default function Appointments() {
               (appointment) => (
                 <tr
                   key={appointment.id}
-                  className="border-b border-slate-100 hover:bg-slate-50"
+                  className={`border-b border-slate-100 hover:bg-slate-50 ${completed && appointment.consultation_case_id && can("consultations") ? "cursor-pointer" : ""}`}
+                  onClick={completed && appointment.consultation_case_id && can("consultations") ? (event) => {
+                    if (!event.target.closest("a, button")) navigate(`/cases/${appointment.consultation_case_id}`);
+                  } : undefined}
                 >
                   <td className="p-3">
                     <div className="flex items-center gap-3">
@@ -633,13 +637,17 @@ export default function Appointments() {
                         </>
                       )}
 
-                    {completed && (
+                    {completed && appointment.consultation_case_id && can("consultations") ? (
+                      <Link to={`/cases/${appointment.consultation_case_id}`} className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 focus-visible:outline-2 focus-visible:outline-emerald-600">
+                        <CheckCircle2 size={17} /> View consultation / Print
+                      </Link>
+                    ) : completed && (
                       <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-600">
                         <CheckCircle2
                           size={17}
                         />
 
-                        Consultation completed
+                        {appointment.consultation_case_id ? "Consultation access required" : "No linked consultation"}
                       </span>
                     )}
                   </td>
@@ -759,7 +767,7 @@ export default function Appointments() {
             />
           </section>
 
-          <section className="flex max-h-[calc(100dvh-5rem)] min-h-0 scroll-mt-16 flex-col rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+          <section className="flex min-h-0 scroll-mt-16 flex-col rounded-3xl bg-white p-5 shadow-sm sm:p-6">
             <div className="flex shrink-0 items-center gap-3">
               <div className="rounded-2xl bg-emerald-50 p-3">
                 <CheckCircle2 className="text-emerald-600" />
@@ -799,7 +807,7 @@ export default function Appointments() {
             onSubmit={
               saveAppointment
             }
-            className="mx-auto my-8 max-w-2xl rounded-3xl bg-white p-6 shadow-2xl"
+            className="mx-auto my-4 max-h-[calc(100dvh-4rem)] max-w-2xl overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 shadow-2xl"
           >
             <div className="flex items-start justify-between">
               <div>

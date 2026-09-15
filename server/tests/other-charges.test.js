@@ -25,6 +25,7 @@ test('other charges bill atomically, deduct unexpired inventory and save certifi
   const submit=items=>call('post','/patient-charges',{patient_id:1,charge_date:'2026-09-11',items});
   const result=submit([{inventory_item_id:itemId,quantity:3,unit_amount:1},{charge_type_id:certId,quantity:1,unit_amount:100}]);
   assert.equal(result.code,201,JSON.stringify(result.body));assert.equal(result.body.total,175);
+  assert.equal(new Set(result.body.charges.map(item=>item.charge_number)).size,1);
   assert.equal(db.prepare('SELECT current_stock FROM inventory_items WHERE id=?').get(itemId).current_stock,7);
   assert.equal(db.prepare('SELECT grand_total FROM invoices').get().grand_total,175);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM invoices').get().n,1);
@@ -88,7 +89,22 @@ test('other charges bill atomically, deduct unexpired inventory and save certifi
   db.prepare('UPDATE patients SET is_archived=1 WHERE id=1').run();
   assert.ok(call('get','/patients/:id/billing-history',{}, {id:1}).body.rows.length>=2);
   const rows=call('get','/patient-charges',{}).body;
-  assert.equal(JSON.parse(rows.find(r=>r.id===params.id).certificate).findings,certificate.findings);
-  assert.equal(rows.find(r=>r.id===result.body.id).charge_name,'Test medicine');
+  const group=rows.find(r=>r.id===result.body.id);
+  assert.equal(group.items.length,2);
+  assert.equal(group.total_amount,175);
+  assert.equal(JSON.parse(group.items.find(r=>r.id===params.id).certificate).findings,certificate.findings);
+  assert.equal(group.items[0].charge_name,'Test medicine');
+  assert.equal(group.items[0].charge_number,group.items[1].charge_number);
+  assert.equal(call('get','/billings',{}).body.find(b=>b.id===invoiceId).charge_numbers,result.body.charge_number);
+  db.prepare('UPDATE patients SET is_archived=0 WHERE id=1').run();
+  const cancelGroup=submit([{charge_type_id:certId,quantity:1,unit_amount:50},{charge_type_id:certId,quantity:2,unit_amount:25}]);
+  assert.equal(cancelGroup.code,201);
+  assert.notEqual(cancelGroup.body.charge_number,result.body.charge_number);
+  const cancelled=call('delete','/patient-charges/:id',{reason:'Duplicate submission'},{id:cancelGroup.body.id});
+  assert.equal(cancelled.code,200,JSON.stringify(cancelled.body));
+  assert.equal(cancelled.body.invoice.total_amount,0);
+  const cancelledRows=db.prepare('SELECT status,notes FROM patient_charges WHERE charge_number=?').all(cancelGroup.body.charge_number);
+  assert.equal(cancelledRows.length,2);
+  assert.ok(cancelledRows.every(item=>item.status==='Deleted'&&item.notes.includes('Duplicate submission')));
  }finally{if(original)require.cache[filename]=original;else delete require.cache[filename];db.close();}
 });

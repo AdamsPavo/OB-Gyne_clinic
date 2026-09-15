@@ -19,6 +19,7 @@ import {
 import BillingHistory from "../components/BillingHistory";
 import { printStatementOfAccount } from "../utils/permissionedPrint";
 import Sidebar from "../components/Sidebar";
+import { useWorkspace } from "../components/Workspace";
 import { api } from "../api/client";
 import { Link } from "react-router-dom";
 
@@ -83,6 +84,7 @@ const getStatusStyle = (status) => {
 };
 
 export default function Billing() {
+  const workspace = useWorkspace();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [pendingSearch, setPendingSearch] =
@@ -156,6 +158,23 @@ export default function Billing() {
     loadBillings();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const refreshCharges = async () => {
+      try {
+        const [invoices, detail] = await Promise.all([
+          api("/billings"),
+          billingFocus?.id ? api(`/invoices/${billingFocus.id}/details`) : Promise.resolve(null),
+        ]);
+        if (!active) return;
+        setRows(Array.isArray(invoices) ? invoices : []);
+        if (detail) setBillingFocus(current => current?.id === detail.id ? detail : current);
+      } catch (err) { if (active) setError(err.message); }
+    };
+    window.addEventListener("patient-charges-saved", refreshCharges);
+    return () => { active = false; window.removeEventListener("patient-charges-saved", refreshCharges); };
+  }, [billingFocus?.id]);
+
   const filteredRows = useMemo(() => {
     const keyword = search
       .trim()
@@ -171,6 +190,7 @@ export default function Billing() {
       const searchableText = [
         invoice.invoice_number,
         invoice.case_number,
+        invoice.charge_numbers,
         invoice.patient_name,
         invoice.payment_status,
       ]
@@ -197,6 +217,7 @@ export default function Billing() {
         invoice.patient_number,
         invoice.invoice_number,
         invoice.case_number,
+        invoice.charge_numbers,
       ].filter(Boolean).join(" ").toLowerCase();
       return isPending && (!keyword || searchable.includes(keyword));
     });
@@ -896,6 +917,11 @@ export default function Billing() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Link
+                        onClick={(event) => {
+                          if (!workspace || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+                          event.preventDefault();
+                          workspace.openTab(`/patient-charges?patient=${billingFocus.patient_id}${billingFocus.consultation_case_id ? `&case=${billingFocus.consultation_case_id}` : ""}`);
+                        }}
                         to={`/patient-charges?patient=${billingFocus.patient_id}${
                           billingFocus.consultation_case_id
                             ? `&case=${billingFocus.consultation_case_id}`
@@ -919,13 +945,14 @@ export default function Billing() {
 
                   <div className="mt-5 grid gap-3 sm:grid-cols-3">
                     <DetailBox label="Invoice" value={billingFocus.invoice_number || "—"} />
-                    <DetailBox label="Case ID" value={billingFocus.case_number || "Miscellaneous"} />
+                    <DetailBox label="Case No." value={billingFocus.case_number || "Miscellaneous"} />
                     <DetailBox label="Consultation Date" value={formatDate(billingFocus.consultation_date || billingFocus.invoice_date)} />
                   </div>
 
                   <div className="mt-6 max-h-[min(360px,45dvh)] overflow-auto overscroll-contain" tabIndex={0} role="region" aria-label="Selected patient charges">
-                    <table className="w-full min-w-175 text-left">
+                    <table className="w-full min-w-225 text-left">
                       <thead><tr className="border-b text-xs uppercase text-slate-400">
+                        <th className="sticky top-0 z-10 bg-pink-100 p-3">Case No. / Charge No.</th>
                         <th className="sticky top-0 z-10 bg-pink-100 p-3">Charge Description</th>
                         <th className="sticky top-0 z-10 bg-pink-100 p-3">Category</th>
                         <th className="sticky top-0 z-10 bg-pink-100 p-3 text-right">Quantity</th>
@@ -936,6 +963,7 @@ export default function Billing() {
                       <tbody>
                         {billingFocus.items?.length ? billingFocus.items.map((item) => (
                           <tr key={item.id} className="border-b border-slate-100">
+                            <td className="p-3 text-slate-600">{item.charge_number || item.case_number || billingFocus.case_number || "\u2014"}</td>
                             <td className="p-3 font-semibold">{item.description}</td>
                             <td className="p-3 text-slate-500">{item.category}</td>
                             <td className="p-3 text-right">{item.quantity}</td>
@@ -944,7 +972,7 @@ export default function Billing() {
                             <td className="p-3 text-right font-bold">{formatCurrency(item.final_amount)}</td>
                           </tr>
                         )) : (
-                          <tr><td colSpan="6" className="p-10 text-center text-slate-400">No itemized charges yet.</td></tr>
+                          <tr><td colSpan="7" className="p-10 text-center text-slate-400">No itemized charges yet.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1041,7 +1069,7 @@ export default function Billing() {
                     onChange={(event) =>
                       setSearch(event.target.value)
                     }
-                    placeholder="Search patient, case, or invoice"
+                    placeholder="Search patient, case, charge, or invoice"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-11 pr-4 text-sm outline-none transition focus:border-pink-400 focus:bg-white focus:ring-4 focus:ring-pink-100 sm:w-80"
                   />
                 </div>
@@ -1081,7 +1109,7 @@ export default function Billing() {
             )}
 
             <div className="mt-6 overflow-x-auto">
-              <table className="w-full min-w-262.5 text-left">
+              <table className="w-full min-w-300 text-left">
                 <thead>
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400">
                     <th className="p-3">
@@ -1093,7 +1121,7 @@ export default function Billing() {
                     </th>
 
                     <th className="p-3">
-                      Case
+                      Case No. / Charge No.
                     </th>
 
                     <th className="p-3">
@@ -1183,8 +1211,7 @@ export default function Billing() {
                             </td>
 
                             <td className="p-3 text-sm text-slate-600">
-                              {invoice.case_number ||
-                                "Legacy record"}
+                              {[invoice.case_number, invoice.charge_numbers].filter(Boolean).join(" / ") || "Legacy record"}
                             </td>
 
                             <td className="p-3 text-sm text-slate-600">
@@ -1386,13 +1413,14 @@ export default function Billing() {
                 <div className="mt-5 overflow-x-auto">
                   <table className="w-full min-w-150 text-left text-sm">
                     <thead><tr className="border-b text-xs uppercase text-slate-400">
-                      <th className="py-2">Description</th><th>Category</th>
+                      <th className="py-2">Case No. / Charge No.</th><th>Description</th><th>Category</th>
                       <th className="text-right">Qty</th><th className="text-right">Unit</th>
                       <th className="text-right">Discount</th><th className="text-right">Final</th>
                     </tr></thead>
                     <tbody>
                       {selectedInvoice.items?.length ? selectedInvoice.items.map((item) => (
                         <tr key={item.id} className="border-b border-slate-100">
+                          <td className="py-3">{item.charge_number || item.case_number || selectedInvoice.case_number || "\u2014"}</td>
                           <td className="py-3 font-semibold">{item.description}</td>
                           <td>{item.category}</td>
                           <td className="text-right">{item.quantity}</td>
@@ -1401,7 +1429,7 @@ export default function Billing() {
                           <td className="text-right font-bold">{formatCurrency(item.final_amount)}</td>
                         </tr>
                       )) : (
-                        <tr><td colSpan="6" className="py-6 text-center text-slate-400">No itemized charges recorded yet.</td></tr>
+                        <tr><td colSpan="7" className="py-6 text-center text-slate-400">No itemized charges recorded yet.</td></tr>
                       )}
                     </tbody>
                   </table>

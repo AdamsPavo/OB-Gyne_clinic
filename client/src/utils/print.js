@@ -496,12 +496,20 @@ const styles = `
   .consultation-sheet .footer { margin-top: 28px; break-inside: avoid; }
 
 
-  @page consultationHalf {
+  .consultation-record-sheet {
+    min-height: 275mm;
+    display: flex;
+    flex-direction: column;
+  }
+  .consultation-record-sheet > * { flex-shrink: 0; }
+  .consultation-record-sheet > .footer { margin-top: auto; padding-top: 28px; }
+
+  @page halfSheet {
     size: A4 portrait;
     margin: 5mm;
   }
-  .consultation-print-page {
-    page: consultationHalf;
+  .half-print-page {
+    page: halfSheet;
     position: relative;
     width: 200mm;
     height: 286.5mm;
@@ -509,7 +517,7 @@ const styles = `
     overflow: hidden;
     break-inside: avoid;
   }
-  .consultation-print-page::after {
+  .half-print-page::after {
     content: "";
     position: absolute;
     top: 143.5mm;
@@ -517,7 +525,7 @@ const styles = `
     width: 100%;
     border-top: 0.2mm solid #94a3b8;
   }
-  .consultation-print-area {
+  .half-print-area {
     position: relative;
     width: 200mm;
     height: 138mm;
@@ -525,7 +533,7 @@ const styles = `
     overflow: hidden;
     break-inside: avoid;
   }
-  .consultation-record-sheet {
+  .half-record-sheet {
     width: 138mm;
     min-height: 200mm;
     display: flex;
@@ -536,30 +544,30 @@ const styles = `
     font-size: 11.5px;
     line-height: 1.3;
   }
-  .consultation-record-sheet > * { flex-shrink: 0; }
-  .consultation-record-sheet .clinic-header { padding: 6px 10px; gap: 10px; }
-  .consultation-record-sheet .clinic-header h1 { font-size: 18px; }
-  .consultation-record-sheet .logo-box { width: 36px; height: 36px; flex-basis: 36px; }
-  .consultation-record-sheet .logo-box img { width: 32px; height: 32px; }
-  .consultation-record-sheet .document-band { padding: 5px 10px; }
-  .consultation-record-sheet .document-type { font-size: 13px; }
-  .consultation-record-sheet .patient-card { grid-template-columns: 1fr; margin: 6px 0; }
-  .consultation-record-sheet .field { padding: 5px 8px; }
-  .consultation-record-sheet .value { margin-top: 1px; }
-  .consultation-record-sheet h2 { margin: 8px 0 4px; font-size: 11.5px; }
-  .consultation-record-sheet .note { padding: 5px 8px; }
-  .consultation-record-sheet .details { gap: 5px; margin-top: 5px; }
-  .consultation-record-sheet .details .note { min-height: 0; }
-  .consultation-record-sheet .detail-label { margin-bottom: 2px; }
-  .consultation-record-sheet .vitals { gap: 5px; }
-  .consultation-record-sheet .vitals > div { padding: 5px 8px; }
-  .consultation-record-sheet > .footer {
+  .half-record-sheet > * { flex-shrink: 0; }
+  .half-record-sheet .clinic-header { padding: 6px 10px; gap: 10px; }
+  .half-record-sheet .clinic-header h1 { font-size: 18px; }
+  .half-record-sheet .logo-box { width: 36px; height: 36px; flex-basis: 36px; }
+  .half-record-sheet .logo-box img { width: 32px; height: 32px; }
+  .half-record-sheet .document-band { padding: 5px 10px; }
+  .half-record-sheet .document-type { font-size: 13px; }
+  .half-record-sheet .patient-card { grid-template-columns: 1fr; margin: 6px 0; }
+  .half-record-sheet .field { padding: 5px 8px; }
+  .half-record-sheet .value { margin-top: 1px; }
+  .half-record-sheet h2 { margin: 8px 0 4px; font-size: 11.5px; }
+  .half-record-sheet .note { padding: 5px 8px; }
+  .half-record-sheet .details { gap: 5px; margin-top: 5px; }
+  .half-record-sheet .details .note { min-height: 0; }
+  .half-record-sheet .detail-label { margin-bottom: 2px; }
+  .half-record-sheet .vitals { gap: 5px; }
+  .half-record-sheet .vitals > div { padding: 5px 8px; }
+  .half-record-sheet > .footer {
     margin-top: auto;
     padding-top: 12px;
     font-size: 9px;
     break-inside: avoid;
   }
-  .consultation-record-sheet .signature { min-width: 180px; padding-top: 5px; }
+  .half-record-sheet .signature { min-width: 180px; padding-top: 5px; }
 
   @media print {
     html,
@@ -600,7 +608,7 @@ const open = (title, body, className = "sheet") => {
     return;
   }
 
-  const halfPage = className.split(" ").includes("consultation-record-sheet");
+  const halfPage = className.split(" ").includes("half-record-sheet");
   win.document.open();
 
   win.document.write(`
@@ -613,7 +621,7 @@ const open = (title, body, className = "sheet") => {
       </head>
 
       <body>
-        ${halfPage ? '<div class="consultation-print-page"><div class="consultation-print-area">' : ""}
+        ${halfPage ? '<div class="half-print-page"><div class="half-print-area">' : ""}
         <main class="${className}">
           ${body}
         </main>
@@ -627,19 +635,19 @@ const open = (title, body, className = "sheet") => {
   let printed = false;
 
   const fitOnePage = () => {
-    const consultation = win.document.querySelector(".consultation-record-sheet");
-    if (consultation) {
-      const area = consultation.parentElement;
-      consultation.style.position = "absolute";
-      consultation.style.top = "0";
-      consultation.style.left = "0";
-      consultation.style.transform = "none";
-      const width = Math.max(consultation.scrollWidth, consultation.getBoundingClientRect().width);
-      const height = Math.max(consultation.scrollHeight, consultation.getBoundingClientRect().height);
+    const halfSheet = win.document.querySelector(".half-record-sheet");
+    if (halfSheet) {
+      const area = halfSheet.parentElement;
+      halfSheet.style.position = "absolute";
+      halfSheet.style.top = "0";
+      halfSheet.style.left = "0";
+      halfSheet.style.transform = "none";
+      const width = Math.max(halfSheet.scrollWidth, halfSheet.getBoundingClientRect().width);
+      const height = Math.max(halfSheet.scrollHeight, halfSheet.getBoundingClientRect().height);
       // Rotate the whole form clockwise, including its logo and signature.
       // The header lands on the right; both rotated axes stay inside the half-sheet.
       const scale = Math.min(1, (area.clientWidth - 1) / height, (area.clientHeight - 1) / width);
-      consultation.style.transform = `translateX(${area.clientWidth}px) rotate(90deg) scale(${scale})`;
+      halfSheet.style.transform = `translateX(${area.clientWidth}px) rotate(90deg) scale(${scale})`;
       return;
     }
     const page = win.document.querySelector(".one-page-sheet");
@@ -794,7 +802,7 @@ export const printMedicalCertificate = (record) => open(
   "sheet consultation-sheet",
 );
 
-/* One complete consultation in the top half of a portrait A4 sheet. */
+/* Full-width, upright A4 case record; long records can continue onto another page. */
 export const printCase = (record) => {
   const date = record.consultation_date?.replace("T", " ").slice(0, 16);
   const diagnosis = record.diagnoses?.map((item) => item.diagnosis_name).filter(Boolean).join(", ");
@@ -828,7 +836,7 @@ export const printCase = (record) => {
 
 /*
   MEDICINE PRESCRIPTION PRINT
-  Compact and limited to one A4 page.
+  Rotated into the top half of A4, with a cut line.
 */
 export const printPrescription = (record) =>
   open(
@@ -908,7 +916,7 @@ export const printPrescription = (record) =>
 
       ${footer()}
     `,
-    "sheet one-page-sheet prescription-sheet",
+    "sheet consultation-sheet half-record-sheet prescription-sheet",
   );
 
 /*
@@ -982,7 +990,7 @@ export const printLaboratoryRequest = (record) => {
 
       ${footer()}
     `,
-    "sheet lab-sheet",
+    "sheet consultation-sheet half-record-sheet laboratory-request-sheet",
   );
 };
 

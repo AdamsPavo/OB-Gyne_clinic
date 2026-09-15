@@ -1,7 +1,7 @@
 import { can } from "../auth";
 import PermissionButton from "../components/PermissionButton";
 import { useEffect, useMemo, useState } from "react";
-import { Building2, DatabaseBackup, KeyRound, PackagePlus, Pencil, Pill, Plus, ReceiptText, Save, ShieldCheck, Stethoscope, Trash2, UserRound, Wrench, X } from "lucide-react";
+import { Building2, FlaskConical, DatabaseBackup, KeyRound, PackagePlus, Pencil, Pill, Plus, ReceiptText, Save, ShieldCheck, Stethoscope, Trash2, UserRound, Wrench, X } from "lucide-react";
 import BackupRestore from "./BackupRestore";
 import Sidebar from "../components/Sidebar";
 import { api } from "../api/client";
@@ -30,7 +30,7 @@ export default function Tools({ settingsOnly = false }) {
   const show = (text, type = "success") => setNotice({ text, type });
   const tabs = [
     ["services", "Service Management", Stethoscope], ["inventory", "Medicine Inventory", Pill],
-    ["charges", "Charge Types", ReceiptText],
+    ["charges", "Charge Types", ReceiptText], ["laboratory", "Laboratory Procedures", FlaskConical],
     ["clinic", "Clinic Details", Building2], ["account", "Profile & Security", UserRound],
     ["backups", "Backup / Restore", DatabaseBackup],
   ].filter(([id]) => id === "backups" ? can("backups") : ["clinic","account"].includes(id) ? can("settings") : !settingsOnly && can("tools"));
@@ -41,7 +41,7 @@ export default function Tools({ settingsOnly = false }) {
         <div className="relative p-6 sm:p-8"><Wrench className="absolute -right-5 -bottom-7 h-40 w-40 rotate-12 text-white/10" />
           <p className="text-sm font-semibold text-fuchsia-100">System administration</p>
           <h1 className="mt-1 text-3xl font-bold sm:text-4xl">Tools</h1>
-          <p className="mt-2 text-fuchsia-50">Manage services, medicine stock, clinic information, and your account.</p>
+          <p className="mt-2 text-fuchsia-50">Manage services, laboratory procedures, medicine stock, clinic information, and your account.</p>
         </div>
       </header>
       <main className="px-4 pb-10 sm:px-6">
@@ -53,6 +53,7 @@ export default function Tools({ settingsOnly = false }) {
           <section>{loading ? <Loading /> : <>
             {tab === "services" && <Services items={data.serviceTypes} reload={load} show={show} />}
             {tab === "inventory" && <Inventory items={data.medicines} reload={load} show={show} />}
+            {tab === "laboratory" && <LaboratoryProcedures items={data.laboratoryProcedures || []} reload={load} show={show} />}
             {tab === "charges" && <Charges items={data.chargeTypes || []} reload={load} show={show} />}
             {tab === "clinic" && <Clinic settings={data.settings} reload={load} show={show} />}
             {tab === "account" && <Account profile={profile} setProfile={setProfile} show={show} />}
@@ -79,6 +80,16 @@ function Services({ items, reload, show }) {
   return <Panel icon={Stethoscope} title="Service Management" description={`${items.length} configured services`} action={<PermissionButton module="tools" action={"create"} onClick={() => setOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-2.5 font-semibold text-white"><Plus size={18} />Add service</PermissionButton>}>
     {open && <form onSubmit={save} className="mt-6 grid gap-4 rounded-2xl bg-fuchsia-50/60 p-4 md:grid-cols-2"><Field label="Service name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /><Field label="Price" type="number" min="0" step=".01" value={form.default_fee} onChange={e => setForm({ ...form, default_fee: e.target.value })} required /><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.is_active)} onChange={e => setForm({ ...form, is_active: e.target.checked })} />Active</label><Actions editing={editing} close={close} /></form>}
     <div className="mt-6 overflow-x-auto"><table className="w-full min-w-150 text-left"><thead><tr className="border-b text-xs uppercase text-slate-400"><th className="p-3">Service</th><th className="p-3">Fee</th><th className="p-3">Status</th><th /></tr></thead><tbody>{items.length ? items.map(i => <tr key={i.id} className="border-b border-slate-100"><td className="p-3"><b>{i.name}</b><p className="text-xs text-slate-400">{i.description || "No description"}</p></td><td className="p-3">{peso.format(i.default_fee || 0)}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${i.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{i.is_active ? "Active" : "Inactive"}</span></td><td><div className="flex justify-end gap-2"><IconButton label="Edit" icon={Pencil} onClick={() => { setEditing(i.id); setForm(i); setOpen(true); }} /><IconButton label="Delete" icon={Trash2} danger onClick={() => remove(i)} /></div></td></tr>) : <Empty span="4" text="No service types yet." />}</tbody></table></div>
+  </Panel>;
+}
+
+function LaboratoryProcedures({ items, reload, show }) {
+  const [form, setForm] = useState({ name: "", category: "", is_active: true }), [editing, setEditing] = useState(null), [open, setOpen] = useState(false);
+  const close = () => { setForm({ name: "", category: "", is_active: true }); setEditing(null); setOpen(false); };
+  const save = async (e) => { e.preventDefault(); try { const r = await api(editing ? `/tools/laboratory-procedures/${editing}` : "/tools/laboratory-procedures", { method: editing ? "PUT" : "POST", body: JSON.stringify(form) }); show(r.message); window.dispatchEvent(new Event("laboratory-procedures-changed")); close(); await reload(); } catch (error) { show(error.message, "error"); } };
+  return <Panel icon={FlaskConical} title="Laboratory Procedures" description={`${items.length} procedures for laboratory requests`} action={<PermissionButton module="tools" action={"create"} onClick={() => setOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-fuchsia-600 px-4 py-2.5 font-semibold text-white"><Plus size={18} />Add procedure</PermissionButton>}>
+    {open && <form onSubmit={save} className="mt-6 grid gap-4 rounded-2xl bg-fuchsia-50/60 p-4 md:grid-cols-2"><Field label="Procedure name" maxLength={200} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /><Field label="Category" maxLength={100} list="laboratory-categories" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required /><datalist id="laboratory-categories">{[...new Set(items.map(item => item.category))].map(category => <option key={category} value={category} />)}</datalist><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.is_active)} onChange={e => setForm({ ...form, is_active: e.target.checked })} />Available in laboratory requests</label><Actions editing={editing} close={close} /></form>}
+    <div className="mt-6 overflow-x-auto"><table className="w-full min-w-150 text-left"><thead><tr className="border-b text-xs uppercase text-slate-400"><th className="p-3">Procedure</th><th className="p-3">Category</th><th className="p-3">Status</th><th /></tr></thead><tbody>{items.length ? items.map(i => <tr key={i.id} className="border-b border-slate-100"><td className="p-3"><b>{i.name}</b></td><td className="p-3">{i.category}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${i.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{i.is_active ? "Active" : "Inactive"}</span></td><td><div className="flex justify-end gap-2"><IconButton label="Edit" icon={Pencil} onClick={() => { setEditing(i.id); setForm(i); setOpen(true); }} /></div></td></tr>) : <Empty span="4" text="No laboratory procedures yet." />}</tbody></table></div>
   </Panel>;
 }
 

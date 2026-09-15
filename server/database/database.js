@@ -911,6 +911,7 @@ db.prepare(`INSERT OR IGNORE INTO patients (id,patient_number,first_name,last_na
 
 if (!db.prepare("PRAGMA table_info(invoices)").all().some(column => column.name === "recipient_name"))
   db.exec("ALTER TABLE invoices ADD COLUMN recipient_name TEXT");
+require("../services/chargeGroups").initializeChargeGroups(db);
 require("../services/billingHistory").initializeBillingHistory(db);
 
 require("../services/permissions").migratePermissions(db);
@@ -918,5 +919,7 @@ require("../services/permissions").migratePermissions(db);
 // Runtime authentication state is deliberately retained, rather than restored from backups.
 db.exec(`CREATE TABLE IF NOT EXISTS app_runtime_state (id INTEGER PRIMARY KEY CHECK(id=1), session_version TEXT NOT NULL DEFAULT '0');
   INSERT OR IGNORE INTO app_runtime_state(id,session_version) VALUES(1,'0');`);
+
+require("../services/laboratoryProcedures").initializeLaboratoryProcedures(db);
 
 module.exports = db;

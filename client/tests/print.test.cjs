@@ -3,17 +3,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-function consultationHtml(record) {
+function consultationHtml(record, printFunction = "printCase") {
   const source = fs.readFileSync(path.join(__dirname, "../src/utils/print.js"), "utf8")
     .replace(/import clinicLogo[^;]+;/, 'const clinicLogo = "logo.png";')
     .replace(/export const /g, "const ");
   let html = "";
   const popup = { document: { open() {}, write(value) { html = value; }, close() {}, querySelector() { return null; } }, setTimeout() {} };
-  new Function("window", "record", `${source}; printCase(record);`)({ open: () => popup }, record);
+  new Function("window", "record", `${source}; ${printFunction}(record);`)({ open: () => popup }, record);
   return html;
 }
 
-test("half-page consultation retains all escaped multiline lab results", () => {
+test("full A4 consultation retains all escaped multiline lab results", () => {
   const findings = Array.from({ length: 150 }, (_, i) => `Test ${i}: <reported> & reviewed`).join("\n");
   const html = consultationHtml({ lab_results: findings });
   assert.ok(html.includes("Laboratory results"));
@@ -21,9 +21,9 @@ test("half-page consultation retains all escaped multiline lab results", () => {
   assert.ok(!html.includes("<reported>"));
   assert.ok(html.includes('<main class="sheet consultation-sheet consultation-record-sheet">'));
   assert.equal((html.match(/<main /g) || []).length, 1);
-  assert.equal((html.match(/<div class="consultation-print-area">/g) || []).length, 1);
+  assert.equal((html.match(/<div class="half-print-area">/g) || []).length, 0);
   assert.equal((html.match(/Physician signature/g) || []).length, 1);
-  assert.equal((html.match(/<div class="consultation-print-page">/g) || []).length, 1);
+  assert.equal((html.match(/<div class="half-print-page">/g) || []).length, 0);
 });
 
 test("legacy test results print when no consultation results have been saved", () => {
@@ -64,3 +64,13 @@ test("SOA reprints saved charges, adjustments and payments with safe text", () =
  assert.ok(html.includes("Test &lt;Patient&gt;"));
  for(const value of ["INV-OLD","Original service","Original discount","OR-OLD","Partially Paid","40.00"])assert.ok(html.includes(value),value);
 });
+
+for (const printFunction of ["printPrescription", "printLaboratoryRequest"]) {
+  test(`${printFunction} uses the rotated half-A4 form with one signature`, () => {
+    const html = consultationHtml({ items: [] }, printFunction);
+    assert.equal((html.match(/<div class="half-print-page">/g) || []).length, 1);
+    assert.equal((html.match(/<div class="half-print-area">/g) || []).length, 1);
+    assert.ok(/<main class="[^"]*half-record-sheet/.test(html));
+    assert.equal((html.match(/Physician signature/g) || []).length, 1);
+  });
+}

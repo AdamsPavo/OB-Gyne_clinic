@@ -33,8 +33,10 @@ function createBackupService(db, directory) {
       if (source.pragma('integrity_check',{simple:true}) !== 'ok') fail('The backup failed the SQLite integrity check.');
       if (source.pragma('foreign_key_check').length) fail('The backup contains broken record relationships.');
       const targetTables = tables(db), sourceTables = tables(source);
-      if (JSON.stringify(targetTables) !== JSON.stringify(sourceTables)) fail('This backup uses a different database version. Restore a backup made by this version of the clinic application.');
+      const legacyCatalog = targetTables.includes('laboratory_procedures') && !sourceTables.includes('laboratory_procedures');
+      if (JSON.stringify(targetTables.filter(table => !legacyCatalog || table !== 'laboratory_procedures')) !== JSON.stringify(sourceTables)) fail('This backup uses a different database version. Restore a backup made by this version of the clinic application.');
       for (const table of targetTables) {
+        if (legacyCatalog && table === 'laboratory_procedures') continue;
         const existing = columns(db,table), incoming = columns(source,table);
         const missing = existing.filter(column => !incoming.some(other=>other.name===column.name));
         // Backups made before per-user permissions are migrated to legacy defaults.
@@ -106,10 +108,15 @@ function createBackupService(db, directory) {
           for (const table of targetTables) db.exec(`DELETE FROM main.${quote(table)}`);
           for (const table of targetTables) {
             const sourceColumns = db.prepare(`PRAGMA restore_source.table_info(${quote(table)})`).all().map(column=>quote(column.name)).join(',');
+            if (table === 'laboratory_procedures' && !sourceColumns) continue;
             db.exec(`INSERT INTO main.${quote(table)} (${sourceColumns}) SELECT ${sourceColumns} FROM restore_source.${quote(table)}`);
           }
           if (db.prepare("SELECT 1 FROM restore_source.sqlite_master WHERE name='sqlite_sequence'").get()) {
             db.exec('DELETE FROM main.sqlite_sequence; INSERT INTO main.sqlite_sequence SELECT * FROM restore_source.sqlite_sequence');
+          }
+          if (targetTables.includes('laboratory_procedures') && !db.prepare("SELECT 1 FROM restore_source.sqlite_master WHERE type='table' AND name='laboratory_procedures'").get()) {
+            const insert = db.prepare('INSERT INTO laboratory_procedures(name,category) VALUES(?,?)');
+            for (const group of require('./laboratoryProcedureDefaults')) for (const name of group.tests) insert.run(name,group.category);
           }
           for (const trigger of triggers) db.exec(trigger.sql);
           migratePermissions(db);

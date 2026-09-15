@@ -18,7 +18,7 @@ export const modules = [
   ['users', 'User Management', '/users', 'Administration', crud],
   ['backups', 'Backup & Restore', '/backup-restore', 'Administration', ['view', 'create', 'delete', 'export', 'restore']],
 ].map(([id, label, path, category, actions]) => ({id, label, path, category, actions}));
-export const actionLabel = (module, action) => action === 'complete'
+export const actionLabel = (module, action) => module === 'charges' && action === 'delete' ? 'Cancel charges' : action === 'complete'
   ? ({billing:'Collect payment', prescriptions:'Dispense', prenatal:'Complete pregnancy'}[module] || 'Complete')
   : action.charAt(0).toUpperCase() + action.slice(1);
 export const fullPermissions = () => Object.fromEntries(modules.map(m => [m.id, [...m.actions]]));
@@ -86,6 +86,7 @@ export function canRequest(user, path, method = 'GET', body = {}) {
   if (read && path === '/inventory/overview') return any(['inventory','prescriptions','charges']);
   if (read && path === '/tools/overview') return any(['tools','settings']);
   if (read && /^\/(services(?:\/[^/]+)?|service-types)$/.test(path)) return any(['tools','appointments','consultations']);
+  if (read && path === '/laboratory-procedures') return any(['tools','laboratory','consultations']);
   if (read && path === '/charge-types') return any(['tools','charges']);
   let module = moduleForPath(path);
   if (/^\/(invoices|billings|payments)(\/|$)/.test(path)) module = 'billing';

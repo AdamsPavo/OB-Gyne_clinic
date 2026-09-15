@@ -5,6 +5,7 @@ const { validateMedicalCertificate } = require("../services/medicalCertificate")
 const router = express.Router();
 const { permissionGuard, hasPermission } = require("../services/permissions");
 router.use(permissionGuard);
+router.use(require("./laboratoryProcedures")(db));
 router.use(require("./backups")(db));
 const { savePrenatalVisit } = require("../services/pregnancies");
 router.use(require("./pregnancies")(db));
@@ -95,6 +96,7 @@ router.get("/tools/overview", (req, res) => {
     res.json({
       settings: db.prepare("SELECT * FROM settings WHERE id = 1").get() || null,
       serviceTypes: db.prepare("SELECT * FROM service_types ORDER BY is_active DESC, name").all(),
+      laboratoryProcedures: db.prepare("SELECT * FROM laboratory_procedures ORDER BY category, name").all(),
       chargeTypes: db.prepare("SELECT * FROM charge_types ORDER BY is_active DESC, name").all(),
       medicines: db.prepare("SELECT * FROM medicine_inventory ORDER BY medicine_name").all(),
     });
@@ -200,7 +202,17 @@ router.get("/patient-charges", (req, res) => {
     JOIN invoices i ON i.id=pc.invoice_id
     ${where.length?`WHERE ${where.join(" AND ")}`:""}
     ORDER BY pc.charge_date DESC,pc.id DESC`).all(...params);
-  res.json(rows.map(billingIdentity));
+  res.json(require("../services/chargeGroups").groupCharges(rows.map(billingIdentity)));
+});
+
+router.delete("/patient-charges/:id", (req, res) => {
+  try {
+    const invoice = require("../services/deletePatientCharge").deletePatientCharge(
+      db, req.params.id, req.body.reason, req.user, recalculateInvoice);
+    res.json({ message: "Charge cancelled. The reason has been saved in charge history.", invoice });
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.status ? error.message : "Unable to cancel charge." });
+  }
 });
 
 router.post("/patient-charges", (req, res) => {
@@ -214,6 +226,7 @@ router.post("/patient-charges", (req, res) => {
       const recipient = text(req.body.walk_in_name) || lines.map(line=>text(line.certificate?.recipient_name)).find(Boolean);
       if (db.prepare("SELECT patient_number FROM patients WHERE id=?").get(req.body.patient_id)?.patient_number === "OPD-WALK-IN" && !recipient)
         throw new Error("Enter the walk-in patient's full name.");
+      const number=nextNumber("CHG", "patient_charges", "charge_number");
       const results = lines.map(line => {
       const body = {...req.body, ...line, patient_id:req.body.patient_id, consultation_case_id:req.body.consultation_case_id};
       const quantity = Number(body.quantity);
@@ -249,7 +262,6 @@ router.post("/patient-charges", (req, res) => {
       sharedInvoice=invoice;
       if (patient.patient_number === "OPD-WALK-IN") db.prepare("UPDATE invoices SET recipient_name=? WHERE id=?").run(recipient,invoice.id);
       if (item) releaseInventory({...body, performed_by:req.user?.full_name || req.user?.username, reason:"Other charge", transaction_date:body.charge_date}, "Dispensed");
-      const number=nextNumber("CHG", "patient_charges", "charge_number");
       const result=db.prepare(`INSERT INTO patient_charges
         (charge_number,patient_id,charge_type_id,consultation_case_id,invoice_id,
          description,quantity,unit_amount,total_amount,charge_date,created_by,notes)
@@ -1871,10 +1883,14 @@ router.get("/invoices/:id/details", (req, res) => {
     LEFT JOIN settings s ON s.id=1 WHERE i.id=?`).get(req.params.id);
   if(!invoice)return res.status(404).json({message:"Invoice not found."});
 
-  invoice.items=db.prepare(`SELECT *,unit_price_cents/100.0 unit_price,
-    subtotal_cents/100.0 item_subtotal,discount_cents/100.0 item_discount,
-    final_amount_cents/100.0 final_amount FROM invoice_items
-    WHERE invoice_id=? AND is_void=0 ORDER BY id`).all(invoice.id);
+  invoice.items=db.prepare(`SELECT ii.*,c.case_number,pc.charge_number,
+    ii.unit_price_cents/100.0 unit_price,
+    ii.subtotal_cents/100.0 item_subtotal,ii.discount_cents/100.0 item_discount,
+    ii.final_amount_cents/100.0 final_amount FROM invoice_items ii
+    LEFT JOIN consultation_cases c ON c.id=ii.consultation_case_id
+    LEFT JOIN patient_charges pc ON ii.source_type='manual_charge'
+      AND pc.id=ii.source_id AND pc.invoice_id=ii.invoice_id
+    WHERE ii.invoice_id=? AND ii.is_void=0 ORDER BY ii.id`).all(invoice.id);
   invoice.payments=db.prepare("SELECT * FROM payments WHERE invoice_id=? ORDER BY payment_date,id").all(invoice.id);
   invoice.adjustments=db.prepare(`SELECT ba.*,ba.amount_cents/100.0 amount,
     ii.description item_description FROM billing_adjustments ba
@@ -2054,6 +2070,10 @@ router.get("/billings", (req, res) => {
       .prepare(`
         SELECT
           i.*,
+          (SELECT group_concat(charge_number, ', ') FROM (
+            SELECT DISTINCT pc.charge_number FROM patient_charges pc
+            WHERE pc.invoice_id = i.id AND pc.status <> 'Deleted' ORDER BY pc.id
+          )) AS charge_numbers,
           c.case_number,
           c.consultation_date,
           c.service_type,

@@ -139,3 +139,19 @@ test('backup HTTP endpoints enforce Admin access, confirmation, maintenance, dow
     f.cleanup();
   }
 });
+
+
+test('backups predating the laboratory catalog restore with the original procedure choices', async () => {
+  const f = fixture();
+  try {
+    const backup = await f.service.create();
+    const source = new Database(f.service.download(backup.name));
+    source.exec('DROP TABLE laboratory_procedures');
+    source.close();
+    f.db.prepare("INSERT INTO laboratory_procedures(name,category) VALUES('New choice','Custom')").run();
+    assert.doesNotThrow(() => f.service.inspect(backup.name));
+    await f.service.restore(backup.name, 1);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM laboratory_procedures').get().n, 34);
+    assert.equal(f.db.prepare("SELECT 1 FROM laboratory_procedures WHERE name='New choice'").get(), undefined);
+  } finally { f.cleanup(); }
+});

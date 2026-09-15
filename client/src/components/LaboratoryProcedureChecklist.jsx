@@ -1,69 +1,32 @@
-import { useState } from "react";
-
-const laboratoryProcedures = [
-  {
-    category: "Hematology",
-    tests: [
-      "Complete Blood Count (CBC)",
-      "Hemoglobin and Hematocrit",
-      "Platelet Count",
-      "Blood Typing",
-      "Clotting Time",
-      "Bleeding Time",
-    ],
-  },
-  {
-    category: "Urinalysis and Stool Examination",
-    tests: [
-      "Urinalysis",
-      "Urine Pregnancy Test",
-      "Fecalysis",
-      "Occult Blood Test",
-    ],
-  },
-  {
-    category: "Blood Chemistry",
-    tests: [
-      "Fasting Blood Sugar (FBS)",
-      "Random Blood Sugar (RBS)",
-      "HbA1c",
-      "Blood Urea Nitrogen (BUN)",
-      "Creatinine",
-      "Uric Acid",
-      "Lipid Profile",
-      "SGPT / ALT",
-      "SGOT / AST",
-    ],
-  },
-  {
-    category: "Serology and Immunology",
-    tests: [
-      "HBsAg",
-      "HIV Screening",
-      "VDRL / RPR",
-      "Dengue Test",
-      "Thyroid Function Test",
-      "Rubella IgG",
-      "Toxoplasma Test",
-    ],
-  },
-  {
-    category: "OB-GYN Procedures",
-    tests: [
-      "Pap Smear",
-      "Vaginal Smear",
-      "Cervical Culture",
-      "High Vaginal Swab",
-      "Beta hCG",
-      "Pelvic Ultrasound",
-      "Transvaginal Ultrasound",
-      "Obstetric Ultrasound",
-    ],
-  },
-];
+import { api } from "../api/client";
+import { useEffect, useState } from "react";
 
 export default function LaboratoryProcedureChecklist({ items, onToggle, compact = false }) {
-  const [category, setCategory] = useState(laboratoryProcedures[0].category);
+  const [laboratoryProcedures, setProcedures] = useState([]);
+  const [error, setError] = useState("");
+  const [category, setCategory] = useState("");
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const rows = await api("/laboratory-procedures");
+        if (!active) return;
+        const groups = [];
+        for (const row of rows) {
+          let group = groups.find(item => item.category === row.category);
+          if (!group) { group = { category: row.category, tests: [] }; groups.push(group); }
+          group.tests.push(row.name);
+        }
+        setProcedures(groups);
+        setCategory(current => groups.some(group => group.category === current) ? current : groups[0]?.category || "");
+        setError("");
+      } catch (err) { if (active) setError(err.message); }
+    };
+    load();
+    window.addEventListener("focus", load);
+    window.addEventListener("laboratory-procedures-changed", load);
+    return () => { active = false; window.removeEventListener("focus", load); window.removeEventListener("laboratory-procedures-changed", load); };
+  }, []);
   const [search, setSearch] = useState("");
   const [selectedOnly, setSelectedOnly] = useState(false);
   const [page, setPage] = useState(0);
@@ -78,6 +41,8 @@ export default function LaboratoryProcedureChecklist({ items, onToggle, compact 
   const pageCount = Math.max(1, Math.ceil(matches.length / 9));
   const currentPage = Math.min(page, pageCount - 1);
 
+  if (error) return <p role="alert" className="mt-3 text-sm text-red-600">Unable to load laboratory procedures: {error}</p>;
+
   if (compact) return (
     <section aria-label="Laboratory procedure picker" className="mt-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-3">
       <div className="flex flex-wrap items-end gap-2">
@@ -90,12 +55,12 @@ export default function LaboratoryProcedureChecklist({ items, onToggle, compact 
         </button>
       </div>
       <div className="my-3 flex flex-wrap gap-1.5" aria-label="Procedure categories">
-        {laboratoryProcedures.map((group, index) => {
+        {laboratoryProcedures.map((group) => {
           const count = group.tests.filter(isSelected).length;
           const active = category === group.category && !query && !selectedOnly;
           return (
             <button key={group.category} type="button" aria-pressed={active} title={group.category} onClick={() => { setCategory(group.category); setSearch(""); setSelectedOnly(false); setPage(0); }} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${active ? "border-blue-600 bg-blue-600 text-white" : "border-blue-200 bg-white text-blue-800 hover:bg-blue-100"}`}>
-              {["Hematology", "Urine & Stool", "Blood Chemistry", "Serology", "OB-GYN"][index]}{count > 0 ? ` (${count})` : ""}
+              {group.category}{count > 0 ? ` (${count})` : ""}
             </button>
           );
         })}

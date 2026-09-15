@@ -1,13 +1,29 @@
-﻿const { legacyPermissions, permissionsFor, canRequest, hasPermission } = require('../../shared/permissions.mjs');
+const { legacyPermissions, permissionsFor, canRequest, hasPermission } = require('../../shared/permissions.mjs');
 function migratePermissions(db) {
   if (!db.prepare('PRAGMA table_info(users)').all().some(c => c.name === 'permissions')) db.exec('ALTER TABLE users ADD COLUMN permissions TEXT');
   db.transaction(() => {
     const update = db.prepare('UPDATE users SET permissions=? WHERE id=?');
     for (const user of db.prepare('SELECT id, role FROM users WHERE permissions IS NULL').all()) update.run(JSON.stringify(legacyPermissions(user.role)), user.id);
   })();
+  // Apply the requested staff document access once; later administrator changes persist.
+  db.exec('CREATE TABLE IF NOT EXISTS permission_migrations (name TEXT PRIMARY KEY)');
+  db.transaction(() => {
+    const name = 'staff-consultation-print-v1';
+    if (db.prepare('SELECT 1 FROM permission_migrations WHERE name=?').get(name)) return;
+    const update = db.prepare('UPDATE users SET permissions=? WHERE id=?');
+    for (const user of db.prepare("SELECT id, role, permissions FROM users WHERE role='staff'").all()) {
+      if (!hasPermission(user, 'appointments')) continue;
+      const grants = permissionsFor(user);
+      for (const module of ['consultations','prenatal','prescriptions','laboratory','billing']) {
+        grants[module] = [...new Set([...grants[module], 'view', 'print'])];
+      }
+      update.run(JSON.stringify(grants), user.id);
+    }
+    db.prepare('INSERT INTO permission_migrations(name) VALUES(?)').run(name);
+  })();
   // Older account-creation integrations also receive persisted legacy defaults.
   const defaults = role => JSON.stringify(legacyPermissions(role)).replaceAll("'", "''");
-  db.exec(`CREATE TRIGGER IF NOT EXISTS users_permission_defaults AFTER INSERT ON users WHEN NEW.permissions IS NULL BEGIN
+  db.exec(`DROP TRIGGER IF EXISTS users_permission_defaults; CREATE TRIGGER users_permission_defaults AFTER INSERT ON users WHEN NEW.permissions IS NULL BEGIN
     UPDATE users SET permissions=CASE NEW.role WHEN 'admin' THEN '${defaults('admin')}' WHEN 'doctor' THEN '${defaults('doctor')}' ELSE '${defaults('staff')}' END WHERE id=NEW.id;
   END;`);
 }

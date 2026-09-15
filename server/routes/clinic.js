@@ -2303,7 +2303,7 @@ router.get(
    GENERIC RESOURCES
 ========================================================= */
 
-router.get("/appointments", (req,res)=>res.json(db.prepare("SELECT * FROM appointments ORDER BY appointment_date DESC,id DESC").all()));
+router.get("/appointments", (req,res)=>res.json(db.prepare("SELECT a.*, (SELECT c.id FROM consultation_cases c WHERE c.appointment_id=a.id AND c.patient_id=a.patient_id ORDER BY c.id DESC LIMIT 1) AS consultation_case_id FROM appointments a ORDER BY a.appointment_date DESC,a.id DESC").all()));
 router.get("/appointments/:id", (req,res)=>{const row=db.prepare("SELECT * FROM appointments WHERE id=?").get(req.params.id);if(!row)return res.status(404).json({message:"Appointment not found."});res.json(row);});
 const saveAppointment = (req,res,isUpdate=false) => {
   const service=db.prepare("SELECT * FROM service_types WHERE id=? AND is_active=1").get(req.body.service_id);
